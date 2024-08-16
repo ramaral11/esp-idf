@@ -89,7 +89,7 @@ Type 字段可以指定为 app (0x00) 或者 data (0x01)，也可以直接使用
 
 SubType 字段
 ~~~~~~~~~~~~
-{IDF_TARGET_ESP_PHY_REF:default = ":ref:`CONFIG_ESP_PHY_INIT_DATA_IN_PARTITION`", esp32p4 = "NOT UPDATED YET"}
+{IDF_TARGET_ESP_PHY_REF:default = ":ref:`CONFIG_ESP_PHY_INIT_DATA_IN_PARTITION`", esp32p4, esp32c5, esp32c61 = "NOT UPDATED YET"}
 
 SubType 字段长度为 8 bit，内容与具体分区 Type 有关。目前，esp-idf 仅仅规定了 “app” 和 “data” 两种分区类型的子类型含义。
 
@@ -277,7 +277,7 @@ Python API
 
 .. code-block:: python
 
-  # 创建 partool.py 的目标设备，并将目标设备连接到串行端口 /dev/ttyUSB1
+  # 创建 parttool.py 的目标设备，并将目标设备连接到串行端口 /dev/ttyUSB1
   target = ParttoolTarget("/dev/ttyUSB1")
 
 现在，可使用创建的 `ParttoolTarget` 在目标设备上完成操作：

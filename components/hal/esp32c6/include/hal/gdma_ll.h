@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,10 +13,13 @@
 #include "soc/gdma_reg.h"
 #include "soc/soc_etm_source.h"
 #include "soc/pcr_struct.h"
+#include "soc/retention_periph_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define GDMA_CH_RETENTION_GET_MODULE_ID(group_id, pair_id) (SLEEP_RETENTION_MODULE_GDMA_CH0 + (SOC_GDMA_PAIRS_PER_GROUP_MAX * group_id) + pair_id)
 
 #define GDMA_LL_GET_HW(id) (((id) == 0) ? (&GDMA) : NULL)
 
@@ -46,6 +49,9 @@ extern "C" {
 #define GDMA_LL_AHB_GROUP_START_ID    0 // AHB GDMA group ID starts from 0
 #define GDMA_LL_AHB_NUM_GROUPS        1 // Number of AHB GDMA groups
 #define GDMA_LL_AHB_PAIRS_PER_GROUP   3 // Number of GDMA pairs in each AHB group
+
+#define GDMA_LL_AHB_DESC_ALIGNMENT    4
+#define GDMA_LL_AHB_RX_BURST_NEEDS_ALIGNMENT  1
 
 #define GDMA_LL_TX_ETM_EVENT_TABLE(group, chan, event)                                     \
     (uint32_t[1][3][GDMA_ETM_EVENT_MAX]){{{                                                \
@@ -278,9 +284,9 @@ static inline void gdma_ll_rx_enable_auto_return(gdma_dev_t *dev, uint32_t chann
 }
 
 /**
- * @brief Check if DMA RX FSM is in IDLE state
+ * @brief Check if DMA RX descriptor FSM is in IDLE state
  */
-static inline bool gdma_ll_rx_is_fsm_idle(gdma_dev_t *dev, uint32_t channel)
+static inline bool gdma_ll_rx_is_desc_fsm_idle(gdma_dev_t *dev, uint32_t channel)
 {
     return dev->channel[channel].in.in_link.inlink_park;
 }
@@ -514,9 +520,9 @@ static inline void gdma_ll_tx_restart(gdma_dev_t *dev, uint32_t channel)
 }
 
 /**
- * @brief Check if DMA TX FSM is in IDLE state
+ * @brief Check if DMA TX descriptor FSM is in IDLE state
  */
-static inline bool gdma_ll_tx_is_fsm_idle(gdma_dev_t *dev, uint32_t channel)
+static inline bool gdma_ll_tx_is_desc_fsm_idle(gdma_dev_t *dev, uint32_t channel)
 {
     return dev->channel[channel].out.out_link.outlink_park;
 }

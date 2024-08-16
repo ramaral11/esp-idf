@@ -14,6 +14,8 @@ Because {IDF_TARGET_NAME} uses multiple types of RAM, it also contains multiple 
 
 For most purposes, the C Standard Library's ``malloc()`` and ``free()`` functions can be used for heap allocation without any special consideration. However, in order to fully make use of all of the memory types and their characteristics, ESP-IDF also has a capabilities-based heap memory allocator. If you want to have a memory with certain properties (e.g., :ref:`dma-capable-memory` or executable-memory), you can create an OR-mask of the required capabilities and pass that to :cpp:func:`heap_caps_malloc`.
 
+.. _memory_capabilities:
+
 Memory Capabilities
 -------------------
 
@@ -105,7 +107,8 @@ Use the ``MALLOC_CAP_DMA`` flag to allocate memory which is suitable for use wit
 
 .. only SOC_SPIRAM_SUPPORTED and not esp32::
 
-    The EDMA hardware feature allows DMA buffers to be placed in external PSRAM, but there may be additional alignment constraints. Consult the {IDF_TARGET_NAME} Technical Reference Manual for details. To allocate a DMA-capable external memory buffer, use the ``MALLOC_CAP_SPIRAM`` capabilities flag together with :cpp:func:`heap_caps_aligned_alloc` with the necessary alignment specified.
+    The EDMA hardware feature allows DMA buffers to be placed in external PSRAM, but there may be additional alignment constraints. Consult the {IDF_TARGET_NAME} Technical Reference Manual for details. To allocate a DMA-capable external memory buffer, use the ``MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA`` capabilities flags; the heap allocator will take care of alignment requirements imposed by the cache and DMA subsystems. If a peripheral has additional alignment requirements, you can use :cpp:func:`heap_caps_aligned_alloc` with the necessary alignment specified.
+
 
 .. _32-bit accessible memory:
 

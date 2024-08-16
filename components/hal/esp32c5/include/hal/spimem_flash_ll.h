@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,6 +18,7 @@
 #include <sys/param.h> // For MIN/MAX
 #include <stdbool.h>
 #include <string.h>
+#include "sdkconfig.h"  // TODO: remove
 
 #include "soc/spi_periph.h"
 #include "soc/spi_mem_struct.h"
@@ -27,6 +28,9 @@
 #include "hal/spi_types.h"
 #include "hal/spi_flash_types.h"
 #include "soc/pcr_struct.h"
+#include "esp_rom_sys.h"
+#include "hal/clk_tree_ll.h"
+#include "soc/clk_tree_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -624,12 +628,25 @@ static inline void spimem_flash_ll_set_cs_setup(spi_mem_dev_t *dev, uint32_t cs_
  */
 static inline uint8_t spimem_flash_ll_get_source_freq_mhz(void)
 {
-    // TODO: [ESP32C5] IDF-8649
-    // MAY CAN IMPROVE (ONLY rc_fast case is incorrect)!
-    // TODO: Default is PLL480M, this is hard-coded.
-    // In the future, we can get the CPU clock source by calling interface.
-    // HAL_ASSERT(HAL_FORCE_READ_U32_REG_FIELD(PCR.mspi_clk_conf, mspi_func_clk_sel) == 2);
-    return 40; // Use Xtal clock source
+    int source_clk_mhz = 0;
+
+    switch (PCR.mspi_clk_conf.mspi_func_clk_sel)
+    {
+    case 0:
+        source_clk_mhz = clk_ll_xtal_get_freq_mhz();
+        break;
+    case 1:
+        source_clk_mhz = (SOC_CLK_RC_FAST_FREQ_APPROX/(1 * 1000 * 1000));
+        break;
+    case 2:
+        source_clk_mhz = clk_ll_bbpll_get_freq_mhz();
+        break;
+    default:
+        break;
+    }
+
+    uint8_t clock_val = source_clk_mhz / (PCR.mspi_clk_conf.mspi_fast_div_num + 1);
+    return clock_val;
 }
 
 /**
@@ -649,6 +666,26 @@ static inline uint32_t spimem_flash_ll_calculate_clock_reg(uint8_t clkdiv)
         div_parameter = ((clkdiv - 1) | (((clkdiv - 1) / 2 & 0xff) << 8 ) | (((clkdiv - 1) & 0xff) << 16));
     }
     return div_parameter;
+}
+
+/**
+ * @brief Write protect signal output when SPI is idle
+
+ * @param level 1: 1: output high, 0: output low
+ */
+static inline void spimem_flash_ll_set_wp_level(spi_mem_dev_t *dev, bool level)
+{
+    dev->ctrl.wp = level;
+}
+
+/**
+ * @brief Get the ctrl value of mspi
+ *
+ * @return uint32_t The value of ctrl register
+ */
+static inline uint32_t spimem_flash_ll_get_ctrl_val(spi_mem_dev_t *dev)
+{
+    return dev->ctrl.val;
 }
 
 #ifdef __cplusplus

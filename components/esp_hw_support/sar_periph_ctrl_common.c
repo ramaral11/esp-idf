@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,6 +15,7 @@
 #include "soc/temperature_sensor_periph.h"
 #include "soc/periph_defs.h"
 #include "esp_private/periph_ctrl.h"
+#include "esp_private/adc_share_hw_ctrl.h"
 
 extern __attribute__((unused)) portMUX_TYPE rtc_spinlock;
 
@@ -44,6 +45,9 @@ void temperature_sensor_power_acquire(void)
     s_temperature_sensor_power_cnt++;
     if (s_temperature_sensor_power_cnt == 1) {
         regi2c_saradc_enable();
+#if !SOC_TSENS_IS_INDEPENDENT_FROM_ADC
+        adc_apb_periph_claim();
+#endif
         TSENS_RCC_ATOMIC() {
             temperature_sensor_ll_bus_clk_enable(true);
             temperature_sensor_ll_reset_module();
@@ -51,10 +55,6 @@ void temperature_sensor_power_acquire(void)
         temperature_sensor_ll_enable(true);
     }
     portEXIT_CRITICAL(&rtc_spinlock);
-    // After enabling/reseting the temperature sensor,
-    // the output value gradually approaches the true temperature
-    // value as the measurement time increases. 300us is recommended.
-    esp_rom_delay_us(300);
 }
 
 void temperature_sensor_power_release(void)
@@ -71,6 +71,9 @@ void temperature_sensor_power_release(void)
         TSENS_RCC_ATOMIC() {
             temperature_sensor_ll_bus_clk_enable(false);
         }
+#if !SOC_TSENS_IS_INDEPENDENT_FROM_ADC
+        adc_apb_periph_free();
+#endif
         regi2c_saradc_disable();
     }
     portEXIT_CRITICAL(&rtc_spinlock);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,7 +19,6 @@
 #include "esp_rom_uart.h"
 #include "hal/uart_ll.h"
 #include "soc/soc_caps.h"
-#include "esp_private/esp_vfs_console.h"
 #include "esp_vfs_dev.h" // Old headers for the aliasing functions
 #include "esp_private/startup_internal.h"
 
@@ -357,7 +356,7 @@ static int uart_fsync(int fd)
 {
     assert(fd >= 0 && fd < 3);
     _lock_acquire_recursive(&s_ctx[fd]->write_lock);
-    esp_rom_uart_tx_wait_idle((uint8_t) fd);
+    esp_rom_output_tx_wait_idle((uint8_t) fd);
     _lock_release_recursive(&s_ctx[fd]->write_lock);
     return 0;
 }
@@ -1010,6 +1009,11 @@ static const esp_vfs_t uart_vfs = {
 #endif // CONFIG_VFS_SUPPORT_TERMIOS
 };
 
+const esp_vfs_t *esp_vfs_uart_get_vfs(void)
+{
+    return &uart_vfs;
+}
+
 void uart_vfs_dev_register(void)
 {
     ESP_ERROR_CHECK(esp_vfs_register("/dev/uart", &uart_vfs, NULL));
@@ -1071,10 +1075,10 @@ void uart_vfs_dev_use_driver(int uart_num)
     _lock_release_recursive(&s_ctx[uart_num]->read_lock);
 }
 
-#if CONFIG_VFS_SUPPORT_IO && CONFIG_ESP_CONSOLE_UART
+#if CONFIG_ESP_CONSOLE_UART
 ESP_SYSTEM_INIT_FN(init_vfs_uart, CORE, BIT(0), 110)
 {
-    esp_vfs_set_primary_dev_vfs_def_struct(&uart_vfs);
+    uart_vfs_dev_register();
     return ESP_OK;
 }
 #endif

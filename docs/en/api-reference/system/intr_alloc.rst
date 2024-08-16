@@ -22,6 +22,14 @@ Overview
 
     The {IDF_TARGET_NAME} has one core, with 28 external asynchronous interrupts. Each interrupt's priority is independently programmable. In addition, there are also 4 core local interrupt sources (CLINT). See **{IDF_TARGET_NAME} Technical Reference Manual** [`PDF <{IDF_TARGET_TRM_EN_URL}#riscvcpu>`__] for more details.
 
+.. only:: esp32p4
+
+    The {IDF_TARGET_NAME} has two cores, with 32 external asynchronous interrupts each. Each interrupt's priority is independently programmable. In addition, there are also 3 core local interrupt sources (CLINT) on each core. See **{IDF_TARGET_NAME} Technical Reference Manual** [`PDF <{IDF_TARGET_TRM_EN_URL}#riscvcpu>`__] for more details.
+
+.. only:: esp32c5 or esp32c61
+
+    The {IDF_TARGET_NAME} has one core, with 32 external asynchronous interrupts. Each interrupt's priority is independently programmable. In addition, there are also 3 core local interrupt sources (CLINT). For details, see **{IDF_TARGET_NAME} Technical Reference Manual** > **High-Performance CPU** [`PDF <{IDF_TARGET_TRM_EN_URL}#riscvcpu>`__].
+
 Because there are more interrupt sources than interrupts, sometimes it makes sense to share an interrupt in multiple drivers. The :cpp:func:`esp_intr_alloc` abstraction exists to hide all these implementation details.
 
 A driver can allocate an interrupt for a certain peripheral by calling :cpp:func:`esp_intr_alloc` (or :cpp:func:`esp_intr_alloc_intrstatus`). It can use the flags passed to this function to specify the type, priority, and trigger method of the interrupt to allocate. The interrupt allocation code will then find an applicable interrupt, use the interrupt matrix to hook it up to the peripheral, and install the given interrupt handler and ISR to it.
@@ -30,7 +38,7 @@ The interrupt allocator presents two different types of interrupts, namely share
 
 Non-shared interrupts can be either level- or edge-triggered. Shared interrupts can only be level interrupts due to the chance of missed interrupts when edge interrupts are used.
 
-To illustrate why shard interrupts can only be level-triggered, take the scenario where peripheral A and peripheral B share the same edge-triggered interrupt. Peripheral B triggers an interrupt and sets its interrupt signal high, causing a low-to-high edge, which in turn latches the CPU's interrupt bit and triggers the ISR. The ISR executes, checks that peripheral A did not trigger an interrupt, and proceeds to handle and clear peripheral B's interrupt signal. Before the ISR returns, the CPU clears its interrupt bit latch. Thus, during the entire interrupt handling process, if peripheral A triggers an interrupt, it will be missed due the CPU clearing the interrupt bit latch.
+To illustrate why shared interrupts can only be level-triggered, take the scenario where peripheral A and peripheral B share the same edge-triggered interrupt. Peripheral B triggers an interrupt and sets its interrupt signal high, causing a low-to-high edge, which in turn latches the CPU's interrupt bit and triggers the ISR. The ISR executes, checks that peripheral A did not trigger an interrupt, and proceeds to handle and clear peripheral B's interrupt signal. Before the ISR returns, the CPU clears its interrupt bit latch. Thus, during the entire interrupt handling process, if peripheral A triggers an interrupt, it will be missed due the CPU clearing the interrupt bit latch.
 
 
 .. only:: esp32 or esp32s3
@@ -61,9 +69,18 @@ To illustrate why shard interrupts can only be level-triggered, take the scenari
     External Peripheral Interrupts
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-    The remaining interrupt sources are from external peripherals. These are defined in ``soc/soc.h`` as ``ETS_*_INTR_SOURCE``.
+    The remaining interrupt sources are from external peripherals.
 
-    Non-internal interrupt slots in both CPU cores are wired to an interrupt matrix, which can be used to route any external interrupt source to any of these interrupt slots.
+.. only:: esp32p4
+
+    Multicore Considerations
+    ------------------------
+
+    Each core on {IDF_TARGET_NAME} provides internal interrupts that are triggered by the core itself and external interrupts that are triggered by peripherals. However, ESP-IDF only makes use of the external interrupts on {IDF_TARGET_NAME}. Most {IDF_TARGET_NAME} interrupt sources are external interrupts.
+
+    Each external interrupt slot of each core is wired to the interrupt matrix. The interrupt matrix allows any interrupt slot to be connected to any external interrupt source. Mapping multiple external interrupts sources to a single slot is also supported. These external interrupt sources are defined in ``soc/interrupts.h`` as ``ETS_*_INTR_SOURCE``.
+
+.. only:: SOC_HP_CPU_HAS_MULTIPLE_CORES
 
     - Allocating an external interrupt will always allocate it on the core that does the allocation.
     - Freeing an external interrupt must always happen on the same core it was allocated on.
@@ -143,7 +160,7 @@ If you have confirmed that the application is indeed running out of interrupts, 
 
 .. list::
 
-    :SOC_HP_CPU_HAS_MULTIPLE_CORES: - On multi-core SoCs, try initializing some of the peripheral drivers from a task pinned to the second core. Interrupts are typically allocated on the same core where the peripheral driver initialization function runs. Therefore by running the initialization function on the second core, more interrupt inputs can be used.
+    :SOC_HP_CPU_HAS_MULTIPLE_CORES: - On multi-core targets, try initializing some of the peripheral drivers from a task pinned to the second core. Interrupts are typically allocated on the same core where the peripheral driver initialization function runs. Therefore by running the initialization function on the second core, more interrupt inputs can be used.
     - Determine the interrupts which can tolerate higher latency, and allocate them using ``ESP_INTR_FLAG_SHARED`` flag (optionally ORed with ``ESP_INTR_FLAG_LOWMED``). Using this flag for two or more peripherals will let them use a single interrupt input, and therefore save interrupt inputs for other peripherals. See :ref:`intr-alloc-shared-interrupts` above.
     :not SOC_CPU_HAS_FLEXIBLE_INTC: - Some peripheral driver may default to allocating interrupts with ``ESP_INTR_FLAG_LEVEL1`` flag, so priority 2 and 3 interrupts do not get used by default. If :cpp:func:`esp_intr_dump` shows that some priority 2 or 3 interrupts are available, try changing the interrupt allocation flags when initializing the driver to ``ESP_INTR_FLAG_LEVEL2`` or ``ESP_INTR_FLAG_LEVEL3``.
     - Check if some of the peripheral drivers do not need to be used all the time, and initialize or deinitialize them on demand. This can reduce the number of simultaneously allocated interrupts.

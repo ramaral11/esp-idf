@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -377,7 +377,7 @@ static inline void dw_gdma_ll_channel_set_trans_block_size(dw_gdma_dev_t *dev, u
 __attribute__((always_inline))
 static inline void dw_gdma_ll_channel_set_src_master_port(dw_gdma_dev_t *dev, uint8_t channel, intptr_t mem_addr)
 {
-    if (mem_addr == MIPI_CSI_MEM_BASE) {
+    if (mem_addr == MIPI_CSI_BRG_MEM_BASE) {
         dev->ch[channel].ctl0.sms = DW_GDMA_LL_MASTER_PORT_MIPI_CSI;
     } else {
         dev->ch[channel].ctl0.sms = DW_GDMA_LL_MASTER_PORT_MEMORY;
@@ -394,7 +394,7 @@ static inline void dw_gdma_ll_channel_set_src_master_port(dw_gdma_dev_t *dev, ui
 __attribute__((always_inline))
 static inline void dw_gdma_ll_channel_set_dst_master_port(dw_gdma_dev_t *dev, uint8_t channel, intptr_t mem_addr)
 {
-    if (mem_addr == MIPI_DSI_MEM_BASE) {
+    if (mem_addr == MIPI_DSI_BRG_MEM_BASE) {
         dev->ch[channel].ctl0.dms = DW_GDMA_LL_MASTER_PORT_MIPI_DSI;
     } else {
         dev->ch[channel].ctl0.dms = DW_GDMA_LL_MASTER_PORT_MEMORY;
@@ -932,7 +932,7 @@ static inline uint32_t dw_gdma_ll_channel_get_dst_periph_status(dw_gdma_dev_t *d
 /**
  * @brief Type of DW-DMA link list item
  */
-typedef struct dw_gdma_link_list_item_t {
+struct dw_gdma_link_list_item_t {
     dmac_chn_sar0_reg_t sar_lo;   /*!< Source address low 32 bits */
     dmac_chn_sar1_reg_t sar_hi;   /*!< Source address high 32 bits */
     dmac_chn_dar0_reg_t dar_lo;   /*!< Destination address low 32 bits */
@@ -949,8 +949,9 @@ typedef struct dw_gdma_link_list_item_t {
     dmac_chn_status1_reg_t status_hi; /*!< Channel status high 32 bits */
     uint32_t reserved_38;
     uint32_t reserved_3c;
-} dw_gdma_link_list_item_t __attribute__((aligned(DW_GDMA_LL_LINK_LIST_ALIGNMENT)));
+} __attribute__((aligned(DW_GDMA_LL_LINK_LIST_ALIGNMENT)));
 
+typedef struct dw_gdma_link_list_item_t dw_gdma_link_list_item_t;
 ESP_STATIC_ASSERT(sizeof(dw_gdma_link_list_item_t) == DW_GDMA_LL_LINK_LIST_ALIGNMENT, "Invalid size of dw_gdma_link_list_item_t structure");
 
 /**
@@ -986,7 +987,7 @@ static inline void dw_gdma_ll_lli_set_dst_trans_width(dw_gdma_link_list_item_t *
 __attribute__((always_inline))
 static inline void dw_gdma_ll_lli_set_src_master_port(dw_gdma_link_list_item_t *lli, intptr_t mem_addr)
 {
-    if (mem_addr == MIPI_CSI_MEM_BASE) {
+    if (mem_addr == MIPI_CSI_BRG_MEM_BASE) {
         lli->ctrl_lo.sms = DW_GDMA_LL_MASTER_PORT_MIPI_CSI;
     } else {
         lli->ctrl_lo.sms = DW_GDMA_LL_MASTER_PORT_MEMORY;
@@ -1002,7 +1003,7 @@ static inline void dw_gdma_ll_lli_set_src_master_port(dw_gdma_link_list_item_t *
 __attribute__((always_inline))
 static inline void dw_gdma_ll_lli_set_dst_master_port(dw_gdma_link_list_item_t *lli, intptr_t mem_addr)
 {
-    if (mem_addr == MIPI_DSI_MEM_BASE) {
+    if (mem_addr == MIPI_DSI_BRG_MEM_BASE) {
         lli->ctrl_lo.dms = DW_GDMA_LL_MASTER_PORT_MIPI_DSI;
     } else {
         lli->ctrl_lo.dms = DW_GDMA_LL_MASTER_PORT_MEMORY;
@@ -1111,7 +1112,7 @@ __attribute__((always_inline))
 static inline void dw_gdma_ll_lli_set_src_burst_len(dw_gdma_link_list_item_t *lli, uint8_t len)
 {
     lli->ctrl_hi.arlen_en = len > 0;
-    lli->ctrl_hi.arlen = len;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(lli->ctrl_hi, arlen, len);
 }
 
 /**
@@ -1124,7 +1125,7 @@ __attribute__((always_inline))
 static inline void dw_gdma_ll_lli_set_dst_burst_len(dw_gdma_link_list_item_t *lli, uint8_t len)
 {
     lli->ctrl_hi.awlen_en = len > 0;
-    lli->ctrl_hi.awlen = len;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(lli->ctrl_hi, awlen, len);
 }
 
 /**

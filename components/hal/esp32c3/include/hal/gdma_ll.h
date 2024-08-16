@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -46,6 +46,9 @@ extern "C" {
 #define GDMA_LL_AHB_NUM_GROUPS             1 // Number of AHB GDMA groups
 #define GDMA_LL_AHB_PAIRS_PER_GROUP        3 // Number of GDMA pairs in each AHB group
 #define GDMA_LL_AHB_TX_RX_SHARE_INTERRUPT  1  // TX and RX channel in the same pair will share the same interrupt source number
+
+#define GDMA_LL_AHB_DESC_ALIGNMENT    4
+#define GDMA_LL_AHB_RX_BURST_NEEDS_ALIGNMENT  1
 
 ///////////////////////////////////// Common /////////////////////////////////////////
 
@@ -242,9 +245,9 @@ static inline void gdma_ll_rx_enable_auto_return(gdma_dev_t *dev, uint32_t chann
 }
 
 /**
- * @brief Check if DMA RX FSM is in IDLE state
+ * @brief Check if DMA RX descriptor FSM is in IDLE state
  */
-static inline bool gdma_ll_rx_is_fsm_idle(gdma_dev_t *dev, uint32_t channel)
+static inline bool gdma_ll_rx_is_desc_fsm_idle(gdma_dev_t *dev, uint32_t channel)
 {
     return dev->channel[channel].in.in_link.park;
 }
@@ -468,9 +471,9 @@ static inline void gdma_ll_tx_restart(gdma_dev_t *dev, uint32_t channel)
 }
 
 /**
- * @brief Check if DMA TX FSM is in IDLE state
+ * @brief Check if DMA TX descriptor FSM is in IDLE state
  */
-static inline bool gdma_ll_tx_is_fsm_idle(gdma_dev_t *dev, uint32_t channel)
+static inline bool gdma_ll_tx_is_desc_fsm_idle(gdma_dev_t *dev, uint32_t channel)
 {
     return dev->channel[channel].out.out_link.park;
 }

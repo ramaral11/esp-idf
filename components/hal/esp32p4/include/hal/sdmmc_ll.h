@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,6 +18,7 @@
 #include "hal/assert.h"
 #include "soc/clk_tree_defs.h"
 #include "soc/sdmmc_struct.h"
+#include "soc/sdmmc_reg.h"
 #include "soc/hp_sys_clkrst_struct.h"
 #include "soc/lp_clkrst_struct.h"
 
@@ -28,10 +29,25 @@ extern "C" {
 
 #define SDMMC_LL_GET_HW(id)   (((id) == 0) ? (&SDMMC) : NULL)
 
+/* Default disabled interrupts (on init):
+ *  SDMMC_INTMASK_RXDR,
+ *  SDMMC_INTMASK_TXDR,
+ *  SDMMC_INTMASK_BCI,
+ *  SDMMC_INTMASK_ACD,
+ *  SDMMC_INTMASK_IO_SLOT1,
+ *  SDMMC_INTMASK_IO_SLOT0
+ */
+// Default enabled interrupts (sdio is enabled only when use):
+#define SDMMC_LL_INTMASK_DEFAULT \
+    (SDMMC_INTMASK_CD | SDMMC_INTMASK_RESP_ERR | SDMMC_INTMASK_CMD_DONE | SDMMC_INTMASK_DATA_OVER | \
+    SDMMC_INTMASK_RCRC | SDMMC_INTMASK_DCRC | SDMMC_INTMASK_RTO | SDMMC_INTMASK_DTO | SDMMC_INTMASK_HTO | \
+    SDMMC_INTMASK_HLE | \
+    SDMMC_INTMASK_SBE | \
+    SDMMC_INTMASK_EBE)
+
 /**
  * SDMMC capabilities
  */
-#define SDMMC_LL_MAX_FREQ_KHZ_FPGA                    (4*1000)
 #define SDMMC_LL_SLOT_SUPPORT_GPIO_MATRIX(SLOT_ID)    ((SLOT_ID == 0) ? 0 : 1)
 
 #define SDMMC_LL_IOMUX_FUNC    0
@@ -87,9 +103,9 @@ static inline void sdmmc_ll_select_clk_source(sdmmc_dev_t *hw, soc_periph_sdmmc_
     case SDMMC_CLK_SRC_PLL160M:
         clk_val = 0;
         break;
-    case SDMMC_CLK_SRC_PLL200M:
-        clk_val = 1;
-        break;
+    // case SDMMC_CLK_SRC_PLL200M: // TODO: IDF-8886
+    //     clk_val = 1;
+    //     break;
     default:
         HAL_ASSERT(false);
         break;
@@ -437,6 +453,17 @@ static inline void sdmmc_ll_enable_interrupt(sdmmc_dev_t *hw, uint32_t mask, boo
 static inline void sdmmc_ll_clear_interrupt(sdmmc_dev_t *hw, uint32_t mask)
 {
     hw->rintsts.val = mask;
+}
+
+/**
+ * @brief Enable / disable interrupts globally
+ *
+ * @param hw  hardware instance address
+ * @param en  enable / disable
+ */
+static inline void sdmmc_ll_enable_global_interrupt(sdmmc_dev_t *hw, bool en)
+{
+    hw->ctrl.int_enable = (uint32_t)en;
 }
 
 #ifdef __cplusplus

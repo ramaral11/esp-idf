@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,6 +13,7 @@
 #include "esp_check.h"
 #include "driver/gpio.h"
 #include "esp_private/periph_ctrl.h"
+#include "esp_private/gpio.h"
 #include "driver/rmt_types_legacy.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,6 +27,7 @@
 #include "hal/rmt_ll.h"
 #include "hal/gpio_hal.h"
 #include "esp_rom_gpio.h"
+#include "esp_compiler.h"
 
 #define RMT_CHANNEL_ERROR_STR "RMT CHANNEL ERR"
 #define RMT_ADDR_ERROR_STR "RMT ADDRESS ERR"
@@ -141,6 +143,7 @@ static void rmt_module_enable(void)
             rmt_ll_enable_bus_clock(0, true);
             rmt_ll_reset_register(0);
         }
+        rmt_ll_mem_power_by_pmu(rmt_contex.hal.regs);
         rmt_contex.rmt_module_enabled = true;
     }
     RMT_EXIT_CRITICAL();
@@ -151,6 +154,7 @@ static void rmt_module_disable(void)
 {
     RMT_ENTER_CRITICAL();
     if (rmt_contex.rmt_module_enabled == true) {
+        rmt_ll_mem_force_power_off(rmt_contex.hal.regs);
         RMT_RCC_ATOMIC() {
             rmt_ll_enable_bus_clock(0, false);
         }
@@ -250,7 +254,11 @@ esp_err_t rmt_set_mem_pd(rmt_channel_t channel, bool pd_en)
 {
     ESP_RETURN_ON_FALSE(channel < RMT_CHANNEL_MAX, ESP_ERR_INVALID_ARG, TAG, RMT_CHANNEL_ERROR_STR);
     RMT_ENTER_CRITICAL();
-    rmt_ll_power_down_mem(rmt_contex.hal.regs, pd_en);
+    if (pd_en) {
+        rmt_ll_mem_force_power_off(rmt_contex.hal.regs);
+    } else {
+        rmt_ll_mem_power_by_pmu(rmt_contex.hal.regs);
+    }
     RMT_EXIT_CRITICAL();
     return ESP_OK;
 }
@@ -259,7 +267,7 @@ esp_err_t rmt_get_mem_pd(rmt_channel_t channel, bool *pd_en)
 {
     ESP_RETURN_ON_FALSE(channel < RMT_CHANNEL_MAX, ESP_ERR_INVALID_ARG, TAG, RMT_CHANNEL_ERROR_STR);
     RMT_ENTER_CRITICAL();
-    *pd_en = rmt_ll_is_mem_powered_down(rmt_contex.hal.regs);
+    *pd_en = rmt_ll_is_mem_force_powered_down(rmt_contex.hal.regs);
     RMT_EXIT_CRITICAL();
     return ESP_OK;
 }
@@ -537,7 +545,7 @@ esp_err_t rmt_set_gpio(rmt_channel_t channel, rmt_mode_t mode, gpio_num_t gpio_n
     ESP_RETURN_ON_FALSE(((GPIO_IS_VALID_GPIO(gpio_num) && (mode == RMT_MODE_RX)) ||
                          (GPIO_IS_VALID_OUTPUT_GPIO(gpio_num) && (mode == RMT_MODE_TX))), ESP_ERR_INVALID_ARG, TAG, RMT_GPIO_ERROR_STR);
 
-    gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[gpio_num], PIN_FUNC_GPIO);
+    gpio_func_sel(gpio_num, PIN_FUNC_GPIO);
     if (mode == RMT_MODE_TX) {
         ESP_RETURN_ON_FALSE(RMT_IS_TX_CHANNEL(channel), ESP_ERR_INVALID_ARG, TAG, RMT_CHANNEL_ERROR_STR);
         gpio_set_direction(gpio_num, GPIO_MODE_OUTPUT);
@@ -678,7 +686,7 @@ static esp_err_t rmt_internal_config(rmt_dev_t *dev, const rmt_config_t *rmt_par
 #endif
         RMT_EXIT_CRITICAL();
 
-        ESP_LOGD(TAG, "Rmt Rx Channel %u|Gpio %u|Sclk_Hz %"PRIu32"|Div %u|Thresold %u|Filter %u",
+        ESP_LOGD(TAG, "Rmt Rx Channel %u|Gpio %u|Sclk_Hz %"PRIu32"|Div %u|Threshold %u|Filter %u",
                  channel, gpio_num, rmt_source_clk_hz, clk_div, threshold, filter_cnt);
     }
 
@@ -1011,7 +1019,7 @@ esp_err_t rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int intr
     }
 
 #if CONFIG_RINGBUF_PLACE_ISR_FUNCTIONS_INTO_FLASH
-    if (intr_alloc_flags & ESP_INTR_FLAG_IRAM ) {
+    if (intr_alloc_flags & ESP_INTR_FLAG_IRAM) {
         ESP_LOGE(TAG, "ringbuf ISR functions in flash, but used in IRAM interrupt");
         return ESP_ERR_INVALID_ARG;
     }
@@ -1060,6 +1068,7 @@ esp_err_t rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int intr
 
 #if SOC_RMT_SUPPORT_RX_PINGPONG
     if (p_rmt_obj[channel]->rx_item_buf == NULL && rx_buf_size > 0) {
+        ESP_COMPILER_DIAGNOSTIC_PUSH_IGNORE("-Wanalyzer-malloc-leak") // False-positive detection. TODO GCC-366
 #if !CONFIG_SPIRAM_USE_MALLOC
         p_rmt_obj[channel]->rx_item_buf = calloc(1, rx_buf_size);
 #else
@@ -1073,6 +1082,7 @@ esp_err_t rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int intr
             ESP_LOGE(TAG, "RMT malloc fail");
             return ESP_FAIL;
         }
+        ESP_COMPILER_DIAGNOSTIC_POP("-Wanalyzer-malloc-leak")
         p_rmt_obj[channel]->rx_item_buf_size = rx_buf_size;
     }
 #endif
@@ -1236,7 +1246,7 @@ esp_err_t rmt_translator_get_context(const size_t *item_num, void **context)
 {
     ESP_RETURN_ON_FALSE(item_num && context, ESP_ERR_INVALID_ARG, TAG, "invalid arguments");
 
-    // the address of tx_len_rem is directlly passed to the callback,
+    // the address of tx_len_rem is directly passed to the callback,
     // so it's possible to get the object address from that
     rmt_obj_t *obj = __containerof(item_num, rmt_obj_t, tx_len_rem);
     *context = obj->tx_context;

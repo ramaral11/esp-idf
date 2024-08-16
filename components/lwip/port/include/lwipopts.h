@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *
- * SPDX-FileContributor: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2015-2024 Espressif Systems (Shanghai) CO LTD
  */
 #ifndef LWIP_HDR_ESP_LWIPOPTS_H
 #define LWIP_HDR_ESP_LWIPOPTS_H
@@ -217,8 +217,8 @@ extern "C" {
 
 /**
  * IP_NAPT==1: Enables IPv4 Network Address and Port Translation.
- * Note that both CONFIG_LWIP_IP_FORWARD and CONFIG_LWIP_L2_TO_L3_COPY options
- * need to be enabled in system configuration for the NAPT to work on ESP platform
+ * Note that CONFIG_LWIP_IP_FORWARD option need to be enabled in
+ * system configuration for the NAPT to work on ESP platform
  */
 #ifdef CONFIG_LWIP_IPV4_NAPT
 #define IP_NAPT                         1
@@ -247,6 +247,11 @@ extern "C" {
  * packets even if the maximum amount of fragments is enqueued for reassembly!
  */
 #define IP_REASS_MAX_PBUFS              CONFIG_LWIP_IP_REASS_MAX_PBUFS
+
+/**
+ * IP_DEFAULT_TTL: Default value for Time-To-Live used by transport layers.
+ */
+#define IP_DEFAULT_TTL                   CONFIG_LWIP_IP_DEFAULT_TTL
 
 /*
    ----------------------------------
@@ -465,9 +470,13 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
  */
 #define LWIP_DNS                        1
 
+/** The maximum number of IP addresses per host
+ */
+#define DNS_MAX_HOST_IP                 CONFIG_LWIP_DNS_MAX_HOST_IP
+
 /** The maximum of DNS servers
  */
-#define DNS_MAX_SERVERS                 3
+#define DNS_MAX_SERVERS                 CONFIG_LWIP_DNS_MAX_SERVERS
 
 /** ESP specific option only applicable if ESP_DNS=1
  *
@@ -475,6 +484,14 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
  * FALLBACK_DNS_SERVER_ADDRESS(ipaddr), where 'ipaddr' is an 'ip_addr_t*'
  */
 #define DNS_FALLBACK_SERVER_INDEX       (DNS_MAX_SERVERS - 1)
+
+#ifdef CONFIG_LWIP_FALLBACK_DNS_SERVER_SUPPORT
+#define FALLBACK_DNS_SERVER_ADDRESS(address)                           \
+        do {    ip_addr_t *server_dns = address;                            \
+                char server_ip[] = CONFIG_LWIP_FALLBACK_DNS_SERVER_ADDRESS; \
+                ipaddr_aton(server_ip, server_dns);                         \
+        } while (0)
+#endif /* CONFIG_LWIP_FALLBACK_DNS_SERVER_SUPPORT */
 
 /**
  * LWIP_DNS_SUPPORT_MDNS_QUERIES==1: Enable mDNS queries in hostname resolution.
@@ -484,6 +501,17 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
 #define LWIP_DNS_SUPPORT_MDNS_QUERIES   1
 #else
 #define LWIP_DNS_SUPPORT_MDNS_QUERIES   0
+#endif
+
+/**
+ * LWIP_DNS_SETSERVER_WITH_NETIF: If this is turned on, the dns_setserver_with_netif() is enabled and called
+ * from all internal modules (instead of dns_setserver()) allowing to setup a user callback to collect DNS server
+ * information acquired by the related network interface.
+ */
+#ifdef CONFIG_LWIP_DNS_SETSERVER_WITH_NETIF
+#define LWIP_DNS_SETSERVER_WITH_NETIF   1
+#else
+#define LWIP_DNS_SETSERVER_WITH_NETIF   0
 #endif
 
 /*
@@ -849,7 +877,7 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
  * The queue size value itself is platform-dependent, but is passed to
  * sys_mbox_new() when the acceptmbox is created.
  */
-#define DEFAULT_ACCEPTMBOX_SIZE         6
+#define DEFAULT_ACCEPTMBOX_SIZE         CONFIG_LWIP_TCP_ACCEPTMBOX_SIZE
 
 /**
  * DEFAULT_THREAD_STACKSIZE: The stack size used by any other lwIP thread.
@@ -1053,6 +1081,11 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
 #define PPP_IPV6_SUPPORT                               CONFIG_LWIP_PPP_ENABLE_IPV6
 
 /**
+ * PPP_IPV4_SUPPORT==1: Enable PPP IPv4 support
+ */
+#define PPP_IPV4_SUPPORT                               CONFIG_LWIP_PPP_ENABLE_IPV4
+
+/**
  * PPP_NOTIFY_PHASE==1: Support PPP notify phase.
  */
 #define PPP_NOTIFY_PHASE                CONFIG_LWIP_PPP_NOTIFY_PHASE_SUPPORT
@@ -1078,9 +1111,19 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
 #define MPPE_SUPPORT                    CONFIG_LWIP_PPP_MPPE_SUPPORT
 
 /**
+ * PPP_SERVER==1: Enable PPP server support (waiting for incoming PPP session).
+ */
+#define PPP_SERVER                      CONFIG_LWIP_PPP_SERVER_SUPPORT
+
+/**
+ * VJ_SUPPORT==1: Support VJ header compression.
+ */
+#define VJ_SUPPORT                      CONFIG_LWIP_PPP_VJ_HEADER_COMPRESSION
+
+/**
  * PPP_MAXIDLEFLAG: Max Xmit idle time (in ms) before resend flag char.
  * TODO: If PPP_MAXIDLEFLAG > 0 and next package is send during PPP_MAXIDLEFLAG time,
- *       then 0x7E is not added at the begining of PPP package but 0x7E termination
+ *       then 0x7E is not added at the beginning of PPP package but 0x7E termination
  *       is always at the end. This behaviour brokes PPP dial with GSM (PPPoS).
  *       The PPP package should always start and end with 0x7E.
  */
@@ -1112,6 +1155,15 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
 #else
 #define PPP_SUPPORT                     0
 #endif  /* CONFIG_LWIP_PPP_SUPPORT */
+
+/**
+ * LWIP_USE_EXTERNAL_MBEDTLS: Use external mbed TLS library for crypto implementation used in PPP AUTH
+ */
+#ifdef CONFIG_LWIP_USE_EXTERNAL_MBEDTLS
+#define LWIP_USE_EXTERNAL_MBEDTLS 1
+#else
+#define LWIP_USE_EXTERNAL_MBEDTLS 0
+#endif
 
 /*
    --------------------------------------
@@ -1497,6 +1549,18 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
 #define SNTP_SET_SYSTEM_TIME_US(sec, us)  (sntp_set_system_time(sec, us))
 #define SNTP_GET_SYSTEM_TIME(sec, us)     (sntp_get_system_time(&(sec), &(us)))
 
+/**
+ * Configuring SNTP startup delay
+ */
+#ifdef CONFIG_LWIP_SNTP_STARTUP_DELAY
+#define SNTP_STARTUP_DELAY 1
+#ifdef CONFIG_LWIP_SNTP_MAXIMUM_STARTUP_DELAY
+#define SNTP_STARTUP_DELAY_FUNC     (LWIP_RAND() % CONFIG_LWIP_SNTP_MAXIMUM_STARTUP_DELAY)
+#endif /* CONFIG_LWIP_SNTP_MAXIMUM_STARTUP_DELAY */
+#else
+#define SNTP_STARTUP_DELAY 0
+#endif /* SNTP_STARTUP_DELAY */
+
 /*
    ---------------------------------------
    --------- ESP specific options --------
@@ -1553,7 +1617,7 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
 #define ESP_LWIP                        1
 #define ESP_LWIP_ARP                    1
 #define ESP_PER_SOC_TCP_WND             0
-#define ESP_THREAD_SAFE                 1
+#define ESP_THREAD_SAFE                 1       /* Not used (to be removed in v6.x) */
 #define ESP_THREAD_SAFE_DEBUG           LWIP_DBG_OFF
 #define ESP_DHCP                        1
 #define ESP_DNS                         1
@@ -1571,6 +1635,7 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
 #define ESP_LWIP_LOCK                   1
 #define ESP_THREAD_PROTECTION           1
 #define LWIP_SUPPORT_CUSTOM_PBUF        1
+#define ESP_LWIP_FALLBACK_DNS_PREFER_IPV4 0
 
 /*
    -----------------------------------------
@@ -1590,11 +1655,9 @@ static inline uint32_t timeout_from_offered(uint32_t lease, uint32_t min)
 
 
 #if LWIP_NETCONN_SEM_PER_THREAD
-#if ESP_THREAD_SAFE
 #define LWIP_NETCONN_THREAD_SEM_GET() sys_thread_sem_get()
 #define LWIP_NETCONN_THREAD_SEM_ALLOC() sys_thread_sem_init()
 #define LWIP_NETCONN_THREAD_SEM_FREE() sys_thread_sem_deinit()
-#endif
 #endif
 
 /**

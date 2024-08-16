@@ -136,7 +136,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 #ifdef CONFIG_EXAMPLE_RESET_PROV_MGR_ON_FAILURE
                 retries++;
                 if (retries >= CONFIG_EXAMPLE_PROV_MGR_MAX_RETRY_CNT) {
-                    ESP_LOGI(TAG, "Failed to connect with provisioned AP, reseting provisioned credentials");
+                    ESP_LOGI(TAG, "Failed to connect with provisioned AP, resetting provisioned credentials");
                     wifi_prov_mgr_reset_sm_state_on_failure();
                     retries = 0;
                 }
@@ -230,6 +230,8 @@ static void get_device_service_name(char *service_name, size_t max)
 /* Handler for the optional provisioning endpoint registered by the application.
  * The data format can be chosen by applications. Here, we are using plain ascii text.
  * Applications can choose to use other formats like protobuf, JSON, XML, etc.
+ * Note that memory for the response buffer must be allocated using heap as this buffer
+ * gets freed by the protocomm layer once it has been sent by the transport layer.
  */
 esp_err_t custom_prov_data_handler(uint32_t session_id, const uint8_t *inbuf, ssize_t inlen,
                                           uint8_t **outbuf, ssize_t *outlen, void *priv_data)

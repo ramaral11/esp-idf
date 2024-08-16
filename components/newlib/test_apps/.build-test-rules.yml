@@ -2,6 +2,6 @@
 
 components/newlib/test_apps/newlib:
   disable:
-    - if: IDF_TARGET == "esp32p4"
+    - if: IDF_TARGET in ["esp32c61"]
       temporary: true
-      reason: not supported yet #TODO: IDF-7862
+      reason: not supported yet  # TODO: [esp32c61] IDF-9284

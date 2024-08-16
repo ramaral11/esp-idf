@@ -95,6 +95,15 @@
 #define UC_BT_CLASSIC_BQB_ENABLED           FALSE
 #endif
 
+//Set Encryption Key Size(BT)
+#ifdef CONFIG_BT_ENC_KEY_SIZE_CTRL_STD
+#define UC_BT_ENC_KEY_SIZE_CTRL_MODE   1
+#elif CONFIG_BT_ENC_KEY_SIZE_CTRL_VSC
+#define UC_BT_ENC_KEY_SIZE_CTRL_MODE   2
+#else
+#define UC_BT_ENC_KEY_SIZE_CTRL_MODE   0
+#endif
+
 //BLE
 #ifdef CONFIG_BT_BLE_ENABLED
 #define UC_BT_BLE_ENABLED                   CONFIG_BT_BLE_ENABLED
@@ -203,7 +212,19 @@
 #define UC_BT_SMP_SLAVE_CON_PARAMS_UPD_ENABLE  FALSE
 #endif
 
-//Device Nane Maximum Length
+#ifdef CONFIG_BT_SMP_MAX_BONDS
+#define UC_BT_SMP_MAX_BONDS CONFIG_BT_SMP_MAX_BONDS
+#else
+#define UC_BT_SMP_MAX_BONDS 8
+#endif
+
+#ifdef CONFIG_BT_BLE_SMP_ID_RESET_ENABLE
+#define UC_BT_BLE_SMP_ID_RESET_ENABLE CONFIG_BT_BLE_SMP_ID_RESET_ENABLE
+#else
+#define UC_BT_BLE_SMP_ID_RESET_ENABLE FALSE
+#endif
+
+//Device Name Maximum Length
 #ifdef CONFIG_BT_MAX_DEVICE_NAME_LEN
 #define UC_MAX_LOC_BD_NAME_LEN  CONFIG_BT_MAX_DEVICE_NAME_LEN
 #else
@@ -359,20 +380,6 @@
 /**********************************************************
  * Memory reference
  **********************************************************/
-
-//MEMORY ALLOCATOR
-#ifdef CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST
-#define UC_HEAP_ALLOCATION_FROM_SPIRAM_FIRST    CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST
-#else
-#define UC_HEAP_ALLOCATION_FROM_SPIRAM_FIRST    FALSE
-#endif
-
-//MEMORY DEBUG
-#ifdef CONFIG_BT_BLUEDROID_MEM_DEBUG
-#define UC_BT_BLUEDROID_MEM_DEBUG               CONFIG_BT_BLUEDROID_MEM_DEBUG
-#else
-#define UC_BT_BLUEDROID_MEM_DEBUG               FALSE
-#endif
 
 //ESP COEXIST VSC
 #ifdef CONFIG_BT_BLUEDROID_ESP_COEX_VSC

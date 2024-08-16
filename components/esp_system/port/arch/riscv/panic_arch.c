@@ -1,18 +1,11 @@
 /*
- * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <stdio.h>
 
-#include "spi_flash_mmap.h"
-
-#if CONFIG_IDF_TARGET_ESP32P4
-#include "soc/cache_reg.h"
-#else
-#include "soc/extmem_reg.h"
-#endif
 #include "soc/soc_caps.h"
 #include "esp_private/panic_internal.h"
 #include "esp_private/panic_reason.h"
@@ -38,16 +31,14 @@
 #include "esp_private/hw_stack_guard.h"
 #endif
 
-
 #define DIM(array) (sizeof(array)/sizeof(*array))
 
 /**
  * Function called when a cache error occurs. It prints details such as the
- * explanation of why the panic occured.
+ * explanation of why the panic occurred.
  */
 static inline void print_cache_err_details(const void *frame)
 {
-#if !CONFIG_IDF_TARGET_ESP32P4
     const char* cache_err_msg = esp_cache_err_panic_string();
     if (cache_err_msg) {
         panic_print_str(cache_err_msg);
@@ -55,29 +46,29 @@ static inline void print_cache_err_details(const void *frame)
         panic_print_str("Cache error active, but failed to find a corresponding error message");
     }
     panic_print_str("\r\n");
-#endif
 }
 
 #if CONFIG_ESP_SYSTEM_HW_STACK_GUARD
 static inline void print_assist_debug_details(const void *frame)
 {
-    uint32_t core_id = esp_cpu_get_core_id();
+    uint32_t core_id = esp_hw_stack_guard_get_fired_cpu();
+    if (core_id == ESP_HW_STACK_GUARD_NOT_FIRED) {
+        panic_print_str("ASSIST_DEBUG is not triggered BUT interrupt occurred!\r\n\r\n");
+        core_id = 0;
+    }
     uint32_t sp_min, sp_max;
     const char *task_name = pcTaskGetName(xTaskGetCurrentTaskHandleForCore(core_id));
-    esp_hw_stack_guard_get_bounds(&sp_min, &sp_max);
+    esp_hw_stack_guard_get_bounds(core_id, &sp_min, &sp_max);
 
     panic_print_str("\r\n");
-    if (!esp_hw_stack_guard_is_fired()) {
-        panic_print_str("ASSIST_DEBUG is not triggered BUT interrupt occured!\r\n\r\n");
-    }
 
     panic_print_str("Detected in task \"");
     panic_print_str(task_name);
     panic_print_str("\" at 0x");
-    panic_print_hex((int) esp_hw_stack_guard_get_pc());
+    panic_print_hex((int) esp_hw_stack_guard_get_pc(core_id));
     panic_print_str("\r\n");
     panic_print_str("Stack pointer: 0x");
-    panic_print_hex((int) ((RvExcFrame *)frame)->sp);
+    panic_print_hex((int)((RvExcFrame *)frame)->sp);
     panic_print_str("\r\n");
     panic_print_str("Stack bounds: 0x");
     panic_print_hex((int) sp_min);
@@ -89,7 +80,7 @@ static inline void print_assist_debug_details(const void *frame)
 
 /**
  * Function called when a memory protection error occurs (PMS). It prints details such as the
- * explanation of why the panic occured.
+ * explanation of why the panic occurred.
  */
 #if CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
 
@@ -123,7 +114,7 @@ static inline void print_memprot_err_details(const void *frame __attribute__((un
         PRINT_MEMPROT_ERROR(res);
     }
 
-    panic_print_str( "\r\n  world: ");
+    panic_print_str("\r\n  world: ");
     esp_mprot_pms_world_t world;
     res = esp_mprot_get_violate_world(s_memp_intr.mem_type, &world, s_memp_intr.core);
     if (res == ESP_OK) {
@@ -132,7 +123,7 @@ static inline void print_memprot_err_details(const void *frame __attribute__((un
         PRINT_MEMPROT_ERROR(res);
     }
 
-    panic_print_str( "\r\n  operation type: ");
+    panic_print_str("\r\n  operation type: ");
     uint32_t operation;
     res = esp_mprot_get_violate_operation(s_memp_intr.mem_type, &operation, s_memp_intr.core);
     if (res == ESP_OK) {
@@ -142,7 +133,7 @@ static inline void print_memprot_err_details(const void *frame __attribute__((un
     }
 
     if (esp_mprot_has_byte_enables(s_memp_intr.mem_type)) {
-        panic_print_str("\r\n  byte-enables: " );
+        panic_print_str("\r\n  byte-enables: ");
         uint32_t byte_enables;
         res = esp_mprot_get_violate_byte_enables(s_memp_intr.mem_type, &byte_enables, s_memp_intr.core);
         if (res == ESP_OK) {
@@ -169,7 +160,6 @@ static void panic_print_register_array(const char* names[], const uint32_t* regs
         panic_print_str("  ");
     }
 }
-
 
 void panic_print_registers(const void *f, int core)
 {
@@ -203,7 +193,7 @@ bool panic_soc_check_pseudo_cause(void *f, panic_info_t *info)
     /* Cache errors when reading instructions will result in an illegal instructions,
        before any cache error interrupts trigger. We override the exception cause if
        any cache errors are active to more accurately report the actual reason */
-    if(esp_cache_err_has_active_err() && (frame->mcause == MCAUSE_ILLEGAL_INSTRUCTION) ) {
+    if (esp_cache_err_has_active_err() && ((frame->mcause == MCAUSE_ILLEGAL_INSTRUCTION) || (frame->mcause == MCAUSE_ILLIGAL_INSTRUCTION_ACCESS) || (frame->mcause == MCAUSE_LOAD_ACCESS_FAULT))) {
         pseudo_cause = true;
         frame->mcause = ETS_CACHEERR_INUM;
     }
@@ -222,7 +212,7 @@ void panic_soc_fill_info(void *f, panic_info_t *info)
     info->reason = "Unknown reason";
     info->addr = (void *) frame->mepc;
 
-    /* The mcause has been set by the CPU when the panic occured.
+    /* The mcause has been set by the CPU when the panic occurred.
      * All SoC-level panic will call this function, thus, this register
      * lets us know which error was triggered. */
     if (frame->mcause == ETS_CACHEERR_INUM) {
@@ -252,7 +242,10 @@ void panic_soc_fill_info(void *f, panic_info_t *info)
 
 #if CONFIG_ESP_SYSTEM_HW_STACK_GUARD
     else if (frame->mcause == ETS_ASSIST_DEBUG_INUM) {
-        info->core = esp_cache_err_get_cpuid();
+        info->core = esp_hw_stack_guard_get_fired_cpu();
+        if (info->core == ESP_HW_STACK_GUARD_NOT_FIRED) {
+            info->core = 0;
+        }
         info->reason = "Stack protection fault";
         info->details = print_assist_debug_details;
     }
@@ -298,6 +291,14 @@ void panic_arch_fill_info(void *frame, panic_info_t *info)
     }
 
     info->description = "Exception was unhandled.";
+
+#if SOC_ASYNCHRONOUS_BUS_ERROR_MODE
+    uintptr_t bus_error_pc = rv_utils_asynchronous_bus_get_error_pc();
+    if (bus_error_pc) {
+        /* Change mepc with the fault pc address */
+        regs->mepc = bus_error_pc;
+    }
+#endif // SOC_ASYNCHRONOUS_BUS_ERROR_MODE
 
     info->addr = (void *) regs->mepc;
 }

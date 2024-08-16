@@ -32,7 +32,7 @@
 
 .. list::
 
-   :SOC_RTC_MEM_SUPPORTED: #. 从深度睡眠模式复位：如果 ``RTC_CNTL_STORE6_REG`` 寄存器的值非零，且 ``RTC_CNTL_STORE7_REG`` 寄存器中的 RTC 内存的 CRC 校验值有效，那么程序会使用 ``RTC_CNTL_STORE6_REG`` 寄存器的值作为入口地址，并立即跳转到该地址运行。如果  ``RTC_CNTL_STORE6_REG`` 的值为零，或 ``RTC_CNTL_STORE7_REG`` 中的 CRC 校验值无效，又或通过 ``RTC_CNTL_STORE6_REG`` 调用的代码返回，那么则像上电复位一样继续启动。 **注意**：如果想在这里运行自定义的代码，可以参考 :doc:`深度睡眠 <deep-sleep-stub>` 文档里面介绍的深度睡眠存根机制方法。
+   :ESP_ROM_SUPPORT_DEEP_SLEEP_WAKEUP_STUB: #. 从深度睡眠模式复位：如果 ``RTC_CNTL_STORE6_REG`` 寄存器的值非零，且 ``RTC_CNTL_STORE7_REG`` 寄存器中的 RTC 内存的 CRC 校验值有效，那么程序会使用 ``RTC_CNTL_STORE6_REG`` 寄存器的值作为入口地址，并立即跳转到该地址运行。如果  ``RTC_CNTL_STORE6_REG`` 的值为零，或 ``RTC_CNTL_STORE7_REG`` 中的 CRC 校验值无效，又或通过 ``RTC_CNTL_STORE6_REG`` 调用的代码返回，那么则像上电复位一样继续启动。 **注意**：如果想在这里运行自定义的代码，可以参考 :doc:`深度睡眠 <deep-sleep-stub>` 文档里面介绍的深度睡眠存根机制方法。
 
    #. 上电复位、软件 SoC 复位、看门狗 SoC 复位：检查 ``GPIO_STRAP_REG`` 寄存器，判断是否请求自定义启动模式，如 UART 下载模式。如果是，ROM 会执行此自定义加载模式，否则会像软件 CPU 复位一样继续启动。请参考 {IDF_TARGET_NAME} 技术规格书了解 SoC 启动模式以及具体执行过程。
 
@@ -50,11 +50,11 @@
 
     二级引导程序二进制镜像会从 flash 的 {IDF_TARGET_CONFIG_BOOTLOADER_OFFSET_IN_FLASH} 偏移地址处加载。该地址前面的 flash 4 kB 扇区未使用。
 
-.. only:: esp32p4
+.. only:: SOC_KEY_MANAGER_SUPPORTED
 
     二级引导程序二进制镜像会从 flash 的 {IDF_TARGET_CONFIG_BOOTLOADER_OFFSET_IN_FLASH} 偏移地址处加载。该地址前面的 flash 8 kB 扇区将为密钥管理器保留，用于与 flash 加密 (AES-XTS) 相关的操作。
 
- .. only:: not (esp32 or esp32s2 or esp32p4)
+ .. only:: not (esp32 or esp32s2 or SOC_KEY_MANAGER_SUPPORTED)
 
     二级引导程序二进制镜像会从 flash 的 {IDF_TARGET_CONFIG_BOOTLOADER_OFFSET_IN_FLASH} 偏移地址处加载。
 
@@ -162,7 +162,7 @@ ESP-IDF 应用程序的入口是 :idf_file:`components/esp_system/port/cpu_start
 
    主任务的内核亲和性也是可以配置的，请参考 :ref:`CONFIG_ESP_MAIN_TASK_AFFINITY`。
 
-与普通的 FreeRTOS 任务（或嵌入式 C 的 ``main`` 函数）不同，``app_main`` 任务可以返回。如果``app_main`` 函数返回，那么主任务将会被删除。系统将继续运行其他的 RTOS 任务。因此可以将 ``app_main`` 实现为一个创建其他应用任务然后返回的函数，或主应用任务本身。
+与普通的 FreeRTOS 任务（或嵌入式 C 的 ``main`` 函数）不同，``app_main`` 任务可以返回。如果 ``app_main`` 函数返回，那么主任务将会被删除。系统将继续运行其他的 RTOS 任务。因此可以将 ``app_main`` 实现为一个创建其他应用任务然后返回的函数，或主应用任务本身。
 
 .. only:: SOC_HP_CPU_HAS_MULTIPLE_CORES
 

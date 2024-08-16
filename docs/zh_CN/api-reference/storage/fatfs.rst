@@ -7,6 +7,7 @@ ESP-IDF 使用 `FatFs <http://elm-chan.org/fsw/ff/00index_e.html>`_ 库来实现
 
 此外，我们对 FatFs 库进行了扩展，新增了支持可插拔磁盘 I/O 调度层，从而允许在运行时将 FatFs 驱动映射到物理磁盘。
 
+.. _using-fatfs-with-vfs:
 
 FatFs 与 VFS 配合使用
 ----------------------------
@@ -47,6 +48,8 @@ FatFs 与 VFS 配合使用
     FAT 文件系统不支持硬链接，因此调用 :cpp:func:`link` 后会复制文件内容（仅适用于 FatFs 卷上的文件）。
 
 
+.. _using-fatfs-with-vfs-and-sdcards:
+
 FatFs 与 VFS 和 SD 卡配合使用
 ---------------------------------
 
@@ -69,6 +72,8 @@ FatFs 组件有以下配置选项：
 * :ref:`CONFIG_FATFS_IMMEDIATE_FSYNC` - 如果启用该选项，FatFs 将在每次调用 :cpp:func:`write`、:cpp:func:`pwrite`、:cpp:func:`link`、:cpp:func:`truncate` 和 :cpp:func:`ftruncate` 函数后，自动调用 :cpp:func:`f_sync` 以同步最近的文件改动。该功能可提高文件系统中文件的一致性和文件大小报告的准确性，但由于需要频繁进行磁盘操作，性能将会受到影响。
 * :ref:`CONFIG_FATFS_LINK_LOCK` - 如果启用该选项，可保证 API 的线程安全，但如果应用程序需要快速频繁地进行小文件操作（例如将日志记录到文件），则可能有必要禁用该选项。请注意，如果禁用该选项，调用 :cpp:func:`link` 后的复制操作将是非原子的，此时如果在不同任务中对同一卷上的大文件调用 :cpp:func:`link`，则无法确保线程安全。
 
+
+.. _fatfs-diskio-layer:
 
 FatFs 磁盘 I/O 层
 -------------------
@@ -126,6 +131,7 @@ FatFs 分区生成器
 
 #. ``PRESERVE_TIME`` 标志 - 可选参数，用户可强制让目标镜像保留源文件夹的时间戳。如果不保留，每个目标镜像的时间戳都将设置为 FATFS 默认初始时间（1980 年 1 月 1 日）。
 
+#. ``ONE_FAT`` 标志 - 可选参数，支持生成仅包含单个 FAT（文件分配表）的 FATFS 卷。与包含两个 FAT 的 FATFS 卷相比，这样做可以拥有相对较大的可用空间（通过 ``FAT 使用的扇区数 * 扇区大小`` 计算），但会增加 FATFS 卷损坏的风险。
 
 例如::
 
@@ -135,6 +141,7 @@ FatFs 分区生成器
 
 相关示例请查看 :example:`storage/fatfsgen`。
 
+.. _fatfs-partition-analyzer:
 
 FatFs 分区分析器
 ------------------

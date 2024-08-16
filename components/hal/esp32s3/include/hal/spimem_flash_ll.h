@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -253,7 +253,7 @@ static inline uint32_t spimem_flash_ll_get_tsus_unit_in_cycles(spi_mem_dev_t *de
 {
     uint32_t tsus_unit = 0;
     if (dev->sus_status.flash_pes_dly_256 == 1) {
-        tsus_unit = 128;
+        tsus_unit = 256;
     } else {
         tsus_unit = 4;
     }
@@ -403,7 +403,8 @@ static inline void spimem_flash_ll_user_start(spi_mem_dev_t *dev, bool pe_ops)
  */
 static inline bool spimem_flash_ll_host_idle(const spi_mem_dev_t *dev)
 {
-    return dev->fsm.st == 0;
+    // s3 has no cmd.mst_st, can use cmd.val instead
+    return dev->cmd.val == 0;
 }
 
 /**
@@ -681,6 +682,26 @@ static inline uint32_t spimem_flash_ll_calculate_clock_reg(uint8_t clkdiv)
         div_parameter = ((clkdiv - 1) | (((clkdiv - 1) / 2 & 0xff) << 8 ) | (((clkdiv - 1) & 0xff) << 16));
     }
     return div_parameter;
+}
+
+/**
+ * @brief Write protect signal output when SPI is idle
+
+ * @param level 1: 1: output high, 0: output low
+ */
+static inline void spimem_flash_ll_set_wp_level(spi_mem_dev_t *dev, bool level)
+{
+    dev->ctrl.wp = level;
+}
+
+/**
+ * @brief Get the ctrl value of mspi
+ *
+ * @return uint32_t The value of ctrl register
+ */
+static inline uint32_t spimem_flash_ll_get_ctrl_val(spi_mem_dev_t *dev)
+{
+    return dev->ctrl.val;
 }
 
 #ifdef __cplusplus

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,8 +16,16 @@
 #include "esp_log.h"
 #include "hal/wdt_hal.h"
 
-#if CONFIG_IDF_TARGET_ESP32P4 //TODO-IDF-7925
+// Need to remove check and merge accordingly for ESP32C5 once key manager support added in IDF-8621
+#if SOC_KEY_MANAGER_SUPPORTED || CONFIG_IDF_TARGET_ESP32C5
+#if CONFIG_IDF_TARGET_ESP32C5
 #include "soc/keymng_reg.h"
+#include "hal/key_mgr_types.h"
+#include "soc/pcr_reg.h"
+#else
+#include "hal/key_mgr_hal.h"
+#include "hal/mspi_timing_tuning_ll.h"
+#endif /* CONFIG_IDF_TARGET_ESP32C5 */
 #endif
 
 #ifdef CONFIG_SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK
@@ -214,10 +222,17 @@ static esp_err_t check_and_generate_encryption_keys(void)
         }
         ESP_LOGI(TAG, "Using pre-loaded flash encryption key in efuse");
     }
-
-#if CONFIG_IDF_TARGET_ESP32P4 //TODO - IDF-7925
-    // Force Key Manager to use eFuse key for XTS-AES operation
+// Need to remove check for ESP32C5 and merge accordingly once key manager support added in IDF-8621
+#if SOC_KEY_MANAGER_SUPPORTED || CONFIG_IDF_TARGET_ESP32C5
+#if CONFIG_IDF_TARGET_ESP32C5
     REG_SET_FIELD(KEYMNG_STATIC_REG, KEYMNG_USE_EFUSE_KEY, 2);
+    REG_SET_BIT(PCR_MSPI_CLK_CONF_REG, PCR_MSPI_AXI_RST_EN);
+    REG_CLR_BIT(PCR_MSPI_CLK_CONF_REG, PCR_MSPI_AXI_RST_EN);
+#else
+    // Force Key Manager to use eFuse key for XTS-AES operation
+    key_mgr_hal_set_key_usage(ESP_KEY_MGR_XTS_AES_128_KEY, ESP_KEY_MGR_USE_EFUSE_KEY);
+    _mspi_timing_ll_reset_mspi();
+#endif /* CONFIG_IDF_TARGET_ESP32C5 */
 #endif
 
     return ESP_OK;
@@ -413,7 +428,7 @@ static esp_err_t encrypt_partition(int index, const esp_partition_info_t *partit
                                &partition->pos,
                                &image_data);
         should_encrypt = (err == ESP_OK);
-#ifdef SECURE_FLASH_ENCRYPT_ONLY_IMAGE_LEN_IN_APP_PART
+#ifdef CONFIG_SECURE_FLASH_ENCRYPT_ONLY_IMAGE_LEN_IN_APP_PART
         if (should_encrypt) {
             // Encrypt only the app image instead of encrypting the whole partition
             size = image_data.image_len;
@@ -429,7 +444,7 @@ static esp_err_t encrypt_partition(int index, const esp_partition_info_t *partit
         return ESP_OK;
     } else {
         /* should_encrypt */
-        ESP_LOGI(TAG, "Encrypting partition %d at offset 0x%x (length 0x%x)...", index, partition->pos.offset, size);
+        ESP_LOGI(TAG, "Encrypting partition %d at offset 0x%" PRIx32 " (length 0x%" PRIx32 ")...", index, partition->pos.offset, size);
 
         err = esp_flash_encrypt_region(partition->pos.offset, size);
         ESP_LOGI(TAG, "Done encrypting");
@@ -447,7 +462,7 @@ esp_err_t esp_flash_encrypt_region(uint32_t src_addr, size_t data_length)
     uint32_t buf[FLASH_SECTOR_SIZE / sizeof(uint32_t)];
 
     if (src_addr % FLASH_SECTOR_SIZE != 0) {
-        ESP_LOGE(TAG, "esp_flash_encrypt_region bad src_addr 0x%x", src_addr);
+        ESP_LOGE(TAG, "esp_flash_encrypt_region bad src_addr 0x%" PRIx32, src_addr);
         return ESP_FAIL;
     }
 

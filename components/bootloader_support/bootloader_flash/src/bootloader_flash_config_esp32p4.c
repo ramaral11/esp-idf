@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,17 +22,22 @@
 #include "hal/cache_hal.h"
 #include "hal/cache_ll.h"
 
-void bootloader_flash_update_id()
+void IRAM_ATTR bootloader_flash_update_id()
 {
     esp_rom_spiflash_chip_t *chip = &rom_spiflash_legacy_data->chip;
     chip->device_id = bootloader_read_flash_id();
 }
 
+void bootloader_flash_update_size(uint32_t size)
+{
+    rom_spiflash_legacy_data->chip.chip_size = size;
+}
+
 void IRAM_ATTR bootloader_flash_cs_timing_config()
 {
-    SET_PERI_REG_MASK(SPI_MEM_USER_REG(0), SPI_MEM_CS_HOLD_M | SPI_MEM_CS_SETUP_M);
-    SET_PERI_REG_BITS(SPI_MEM_CTRL2_REG(0), SPI_MEM_CS_HOLD_TIME_V, 0, SPI_MEM_CS_HOLD_TIME_S);
-    SET_PERI_REG_BITS(SPI_MEM_CTRL2_REG(0), SPI_MEM_CS_SETUP_TIME_V, 0, SPI_MEM_CS_SETUP_TIME_S);
+    SET_PERI_REG_MASK(SPI_MEM_C_USER_REG, SPI_MEM_C_CS_HOLD_M | SPI_MEM_C_CS_SETUP_M);
+    SET_PERI_REG_BITS(SPI_MEM_C_CTRL2_REG, SPI_MEM_C_CS_HOLD_TIME_V, 0, SPI_MEM_C_CS_HOLD_TIME_S);
+    SET_PERI_REG_BITS(SPI_MEM_C_CTRL2_REG, SPI_MEM_C_CS_SETUP_TIME_V, 0, SPI_MEM_C_CS_SETUP_TIME_S);
 }
 
 void IRAM_ATTR bootloader_flash_clock_config(const esp_image_header_t *pfhdr)
@@ -93,6 +98,15 @@ static void update_flash_config(const esp_image_header_t *bootloader_hdr)
         break;
     case ESP_IMAGE_FLASH_SIZE_16MB:
         size = 16;
+        break;
+    case ESP_IMAGE_FLASH_SIZE_32MB:
+        size = 32;
+        break;
+    case ESP_IMAGE_FLASH_SIZE_64MB:
+        size = 64;
+        break;
+    case ESP_IMAGE_FLASH_SIZE_128MB:
+        size = 128;
         break;
     default:
         size = 2;
@@ -170,6 +184,15 @@ static void print_flash_info(const esp_image_header_t *bootloader_hdr)
     case ESP_IMAGE_FLASH_SIZE_16MB:
         str = "16MB";
         break;
+    case ESP_IMAGE_FLASH_SIZE_32MB:
+        str = "32MB";
+        break;
+    case ESP_IMAGE_FLASH_SIZE_64MB:
+        str = "64MB";
+        break;
+    case ESP_IMAGE_FLASH_SIZE_128MB:
+        str = "128MB";
+        break;
     default:
         str = "2MB";
         break;
@@ -197,6 +220,9 @@ esp_err_t bootloader_init_spi_flash(void)
 
 #if CONFIG_ESPTOOLPY_FLASHMODE_QIO || CONFIG_ESPTOOLPY_FLASHMODE_QOUT
     bootloader_enable_qio_mode();
+#endif
+#if CONFIG_BOOTLOADER_CACHE_32BIT_ADDR_QUAD_FLASH
+    bootloader_flash_32bits_address_map_enable(bootloader_flash_get_spi_mode());
 #endif
 
     print_flash_info(&bootloader_image_hdr);
@@ -265,6 +291,10 @@ void bootloader_flash_hardware_init(void)
 
     bootloader_spi_flash_resume();
     bootloader_flash_unlock();
+
+#if CONFIG_BOOTLOADER_CACHE_32BIT_ADDR_QUAD_FLASH
+    bootloader_flash_32bits_address_map_enable(bootloader_flash_get_spi_mode());
+#endif
 
     cache_hal_disable(CACHE_LL_LEVEL_EXT_MEM, CACHE_TYPE_ALL);
     update_flash_config(&hdr);

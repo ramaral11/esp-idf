@@ -8,6 +8,7 @@
 
 #include "soc/soc_caps.h"
 #include "soc/periph_defs.h"
+#include "soc/regdma.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +26,15 @@ typedef struct {
 } gdma_signal_conn_t;
 
 extern const gdma_signal_conn_t gdma_periph_signals;
+
+#if SOC_GDMA_SUPPORT_SLEEP_RETENTION
+typedef struct {
+    const regdma_entries_config_t *link_list;
+    uint32_t link_num;
+} gdma_chx_reg_ctx_link_t;
+
+extern const gdma_chx_reg_ctx_link_t gdma_chx_regs_retention[SOC_GDMA_NUM_GROUPS_MAX][SOC_GDMA_PAIRS_PER_GROUP_MAX];
+#endif
 
 #endif
 

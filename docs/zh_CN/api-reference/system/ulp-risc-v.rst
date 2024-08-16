@@ -103,6 +103,11 @@ ULP RISC-V 协处理器代码以 C 语言（或汇编语言）编写，使用基
         ulp_measurement_count = 64;
     }
 
+.. note::
+
+    ULP RISC-V 程序全局变量存储在二进制文件的 ``.bss`` 或者 ``.data`` 部分。这些部分在加载和执行 ULP RISC-V 二进制文件时被初始化。在首次运行 ULP RISC-V 之前，从主 CPU 上的主程序访问这些变量可能会导致未定义行为。
+
+
 互斥
 ^^^^^^^
 
@@ -189,7 +194,38 @@ RTC I2C 控制器提供了在 RTC 电源域中作为 I2C 主机的功能。ULP R
         * 如果 RTC I2C 中断状态日志报告 ``TIMEOUT`` 错误或 ``ACK`` 错误，则通常表示 I2C 设备未响应 RTC I2C 控制器发出的 ``START`` 条件。如果 I2C 从机设备未正确连接到控制器管脚或处于异常状态，则可能会发生这种情况。在进行后续操作之前，请确保 I2C 从机设备状态良好且连接正确。
         * 如果 RTC I2C 中断日志没有报告任何错误状态，则可能表示驱动程序接收 I2C 从机设备数据时速度较慢。这可能是由于 RTC I2C 控制器没有 TX/RX FIFO 来存储多字节数据，而是依赖于使用中断状态轮询机制来进行单字节传输。通过在外设的初始化配置参数中设置 SCL 低周期和 SCL 高周期，可以尽量提高外设 SCL 时钟的运行速度，在一定程度上缓解这一问题。
 
-* **你还可以检查在没有任何 ULP RISC-V 代码干扰和任何睡眠模式未被激活的情况下，RTC I2C 控制器是否仅在主 CPU 上正常工作。** RTC I2C 外设在此基本配置下应该正常工作，这样可以排除 ULP 或睡眠模式导致的潜在问题。
+* 调试问题的方法还包括确保 RTC I2C 控制器 **仅** 在主 CPU 上运行， **没有** ULP RISC-V 代码干扰，并且没有激活 **任何** 睡眠模式。这是确保 RTC I2C 外设正常工作的基本配置。通过这种方式，可以排除由 ULP 或睡眠模式可能引起的任何潜在问题。
+
+ULP RISC-V 中断处理
+------------------------------
+
+ULP RISC-V 内核支持来自特定内部和外部事件的中断处理。设计上，ULP RISC-V 内核可以处理以下来源的中断：
+
+.. list-table:: ULP RISC-V 中断源
+    :widths: 10 5 5
+    :header-rows: 1
+
+    * - 中断源
+      - 类型
+      - IRQ
+    * - 内部定时器中断
+      - 内部中断
+      - 0
+    * - EBREAK、ECALL 或非法指令
+      - 内部中断
+      - 1
+    * - 非对齐内存访问
+      - 内部中断
+      - 2
+    * - RTC 外设中断源
+      - 外部中断
+      - 31
+
+可通过特殊的 32 位寄存器 Q0-Q3 和自定义的 R-type 指令启用中断处理。更多信息，请参阅 *{IDF_TARGET_NAME} 技术参考手册* > *超低功耗协处理器* > *ULP-RISC-V* > *ULP-RISC-V 中断* [`PDF <{IDF_TARGET_TRM_CN_URL}>`__]。
+
+系统启动时，默认启用所有中断。触发中断时，处理器将跳转到 IRQ 向量。IRQ 向量随即保存寄存器上下文，并调用全局中断分发器。ULP RISC-V 驱动程序实现了一个 *弱* 中断分发器 :cpp:func:`_ulp_riscv_interrupt_handler`，充当处理所有中断的中心点。该全局分发器用于调用由 :cpp:func:`ulp_riscv_intr_alloc` 分配的相应中断处理程序。
+
+ULP RISC-V 的中断处理尚在开发中，还不支持针对内部中断源的中断处理。目前支持两个 RTC 外设中断源，即软件触发的中断和 RTC IO 触发的中断，不支持嵌套中断。如果需要自定义中断处理，可以通过定义 :cpp:func:`_ulp_riscv_interrupt_handler` 来覆盖默认的全局中断调度器。
 
 调试 ULP RISC-V 程序
 ----------------------------------
@@ -207,10 +243,23 @@ RTC I2C 控制器提供了在 RTC 电源域中作为 I2C 主机的功能。ULP R
 应用示例
 --------------------
 
-* 主 CPU 处于 Deep-sleep 状态时，ULP RISC-V 协处理器轮询 GPIO：:example:`system/ulp/ulp_riscv/gpio`。
-* ULP RISC-V 协处理器使用 bit-banged UART 驱动程序打印：:example:`system/ulp/ulp_riscv/uart_print`.
-* 主 CPU 处于 Deep-sleep 状态时，ULP RISC-V 协处理器读取外部温度传感器：:example:`system/ulp/ulp_riscv/ds18b20_onewire`。
-* 主 CPU 处于 Deep-sleep 状态时，ULP RISC-V 协处理器读取外部 I2C 温度和湿度传感器 (BMP180)，达到阈值时唤醒主 CPU：:example:`system/ulp/ulp_riscv/i2c`.
+* :example:`system/ulp/ulp_riscv/gpio` 演示了如何通过 ULP-RISC-V 协处理器监控 GPIO 引脚，并在其状态发生变化时唤醒主 CPU。
+
+* :example:`system/ulp/ulp_riscv/uart_print` 演示了如何在开发板上使用 ULP-RISC-V 协处理器通过 bitbang 实现 UART 发射，即使在主 CPU 处于深度睡眠状态时也能直接从 ULP-RISC-V 协处理器输出日志。
+
+.. only:: esp32s2
+
+    * :example:`system/ulp/ulp_riscv/ds18b20_onewire` 演示了如何使用 ULP-RISC-V 协处理器通过 1-Wire 协议读取 DS18B20 传感器的温度，并在温度超过阈值时唤醒主 CPU。
+
+* :example:`system/ulp/ulp_riscv/i2c` 演示了如何在深度睡眠模式下使用 ULP RISC-V 协处理器的 RTC I2C 外设定期测量 BMP180 传感器的温度和压力值，并在这些值超过阈值时唤醒主 CPU。
+
+* :example:`system/ulp/ulp_riscv/interrupts` 演示了 ULP-RISC-V 协处理器如何注册和处理软件中断和 RTC IO 触发的中断，记录软件中断的计数，并在达到某个阈值后或按下按钮时唤醒主 CPU。
+
+* :example:`system/ulp/ulp_riscv/adc` 演示了如何使用 ULP-RISC-V 协处理器定期测量输入电压，并在电压超过设定阈值时唤醒系统。
+
+* :example:`system/ulp/ulp_riscv/gpio_interrupt` 演示了如何使用 ULP-RISC-V 协处理器以通过 RTC IO 中断从深度睡眠中唤醒，使用 GPIO0 作为输入信号，并配置和运行协处理器，将芯片置于深度睡眠模式，直到唤醒源引脚被拉低。
+
+* :example:`system/ulp/ulp_riscv/touch` 演示了如何使用 ULP RISC-V 协处理器定期扫描和读取触摸传感器，并在触摸传感器被激活时唤醒主 CPU。
 
 API 参考
 -------------

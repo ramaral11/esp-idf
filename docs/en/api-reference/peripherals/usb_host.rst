@@ -367,7 +367,7 @@ The USB Host Stack provides a number of examples that implement host class drive
 CDC-ACM
 """""""
 
-* A host class driver for the Communication Device Class (Abstract Control Model) is distributed as a managed component via the `ESP-IDF Component Registry <https://components.espressif.com/component/espressif/usb_host_cdc_acm>`__.
+* A host class driver for the Communication Device Class (Abstract Control Model) is distributed as a managed component via the `ESP Component Registry <https://components.espressif.com/component/espressif/usb_host_cdc_acm>`__.
 * The :example:`peripherals/usb/host/cdc/cdc_acm_host` example uses the CDC-ACM host driver component to communicate with CDC-ACM devices.
 * The :example:`peripherals/usb/host/cdc/cdc_acm_vcp` example shows how can you extend the CDC-ACM host driver to interface Virtual COM Port devices.
 * The CDC-ACM driver is also used in `esp_modem examples <https://github.com/espressif/esp-protocols/tree/master/components/esp_modem/examples>`__, where it is used for communication with cellular modems.
@@ -375,19 +375,19 @@ CDC-ACM
 MSC
 """
 
-* A host class driver for the Mass Storage Class (Bulk-Only Transport) is deployed to `ESP-IDF Component Registry <https://components.espressif.com/component/espressif/usb_host_msc>`__.
+* A host class driver for the Mass Storage Class (Bulk-Only Transport) is deployed to `ESP Component Registry <https://components.espressif.com/component/espressif/usb_host_msc>`__.
 * The :example:`peripherals/usb/host/msc` example demonstrates the usage of the MSC host driver to read and write to a USB flash drive.
 
 HID
 """
 
-* A host class driver for the HID (Human interface device) is distributed as a managed component via the `ESP-IDF Component Registry <https://components.espressif.com/components/espressif/usb_host_hid>`__.
+* A host class driver for the HID (Human interface device) is distributed as a managed component via the `ESP Component Registry <https://components.espressif.com/components/espressif/usb_host_hid>`__.
 * The :example:`peripherals/usb/host/hid` example demonstrates the possibility to receive reports from a USB HID device with several interfaces.
 
 UVC
 """
 
-* A host class driver for the USB Video Device Class is distributed as a managed component via the `ESP-IDF Component Registry <https://components.espressif.com/component/espressif/usb_host_uvc>`__.
+* A host class driver for the USB Video Device Class is distributed as a managed component via the `ESP Component Registry <https://components.espressif.com/component/espressif/usb_host_uvc>`__.
 * The :example:`peripherals/usb/host/uvc` example demonstrates the usage of the UVC host driver to receive a video stream from a USB camera and optionally forward that stream over Wi-Fi.
 
 .. ---------------------------------------------- USB Host Menuconfig --------------------------------------------------
@@ -428,7 +428,22 @@ Configurable parameters of the USB host stack can be configured with multiple op
 * For debounce delay, refer to :ref:`CONFIG_USB_HOST_DEBOUNCE_DELAY_MS`.
 * For reset hold interval, refer to :ref:`CONFIG_USB_HOST_RESET_HOLD_MS`.
 * For reset recovery interval, refer to :ref:`CONFIG_USB_HOST_RESET_RECOVERY_MS`.
-* Fer ``SetAddress()`` recovery interval, refer to :ref:`CONFIG_USB_HOST_SET_ADDR_RECOVERY_MS`.
+* For ``SetAddress()`` recovery interval, refer to :ref:`CONFIG_USB_HOST_SET_ADDR_RECOVERY_MS`.
+
+Multiple Configuration Support
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To support USB devices that have more than one configuration, it is possible to specify the desired configuration number during a device's enumeration process.
+
+Enumeration Filter
+""""""""""""""""""
+
+The enumeration filter is a callback function of type :cpp:type:`usb_host_enum_filter_cb_t` called at the beginning of the enumeration process once a device descriptor is read from a newly attached USB device. Consequently, the user is provided with the obtained device descriptor. Through this callback, the user can:
+
+* Select the configuration of the USB device.
+* Filter which USB devices should be enumerated.
+
+To use the enumeration filter, users should enable the :ref:`CONFIG_USB_HOST_ENABLE_ENUM_FILTER_CALLBACK` option using menuconfig. Users can specify the callback by setting :cpp:member:`usb_host_config_t::enum_filter_cb` which is then passed to the Host Library when calling :cpp:func:`usb_host_install`.
 
 .. -------------------------------------------------- API Reference ----------------------------------------------------
 

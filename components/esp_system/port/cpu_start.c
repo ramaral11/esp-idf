@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,11 +14,9 @@
 #include "esp_log.h"
 #include "esp_chip_info.h"
 
-#include "esp_efuse.h"
 #include "esp_private/cache_err_int.h"
 #include "esp_clk_internal.h"
 
-#include "esp_rom_efuse.h"
 #include "esp_rom_uart.h"
 #include "esp_rom_sys.h"
 #include "esp_rom_caps.h"
@@ -52,6 +50,13 @@
 #include "esp32c6/rtc.h"
 #include "esp32c6/rom/cache.h"
 #include "esp_memprot.h"
+#elif CONFIG_IDF_TARGET_ESP32C61
+#include "esp32c61/rtc.h"
+#include "esp_memprot.h"
+#elif CONFIG_IDF_TARGET_ESP32C5
+#include "esp32c5/rtc.h"
+#include "esp32c5/rom/cache.h"
+#include "esp_memprot.h"
 #elif CONFIG_IDF_TARGET_ESP32H2
 #include "esp32h2/rtc.h"
 #include "esp32h2/rom/cache.h"
@@ -64,14 +69,20 @@
 #elif CONFIG_IDF_TARGET_ESP32P4
 #include "esp32p4/rtc.h"
 #include "soc/hp_sys_clkrst_reg.h"
-#include "soc/interrupt_core0_reg.h"
-#include "soc/interrupt_core1_reg.h"
-#include "soc/keymng_reg.h"
+#endif
+
+#if SOC_KEY_MANAGER_SUPPORTED
+#include "hal/key_mgr_hal.h"
 #endif
 
 #include "esp_private/rtc_clk.h"
-#include "esp_private/esp_ldo_psram.h"
+
+#if SOC_INT_CLIC_SUPPORTED
+#include "hal/interrupt_clic_ll.h"
+#endif // SOC_INT_CLIC_SUPPORTED
+
 #include "esp_private/esp_mmu_map_private.h"
+#include "esp_private/image_process.h"
 #if CONFIG_SPIRAM
 #include "esp_psram.h"
 #include "esp_private/mmu_psram_flash.h"
@@ -83,7 +94,6 @@
 #include "bootloader_flash_config.h"
 #include "bootloader_flash.h"
 #include "esp_private/crosscore_int.h"
-#include "esp_flash_encrypt.h"
 
 #include "esp_private/sleep_gpio.h"
 #include "hal/wdt_hal.h"
@@ -93,7 +103,6 @@
 #include "soc/periph_defs.h"
 #include "esp_cpu.h"
 #include "esp_private/esp_clk.h"
-#include "spi_flash_mmap.h"
 
 #if CONFIG_ESP32_TRAX || CONFIG_ESP32S2_TRAX || CONFIG_ESP32S3_TRAX
 #include "esp_private/trax.h"
@@ -105,6 +114,7 @@
 #include "esp_rom_spiflash.h"
 #include "bootloader_init.h"
 #include "esp_private/bootloader_flash_internal.h"
+#include "spi_flash_mmap.h"
 #endif // CONFIG_APP_BUILD_TYPE_RAM
 
 //This dependency will be removed in the future
@@ -113,8 +123,13 @@
 #include "esp_private/startup_internal.h"
 #include "esp_private/system_internal.h"
 
+#if SOC_MEM_NON_CONTIGUOUS_SRAM
+extern int _bss_start_low, _bss_start_high;
+extern int _bss_end_low, _bss_end_high;
+#else
 extern int _bss_start;
 extern int _bss_end;
+#endif // SOC_MEM_NON_CONTIGUOUS_SRAM
 extern int _rtc_bss_start;
 extern int _rtc_bss_end;
 #if CONFIG_BT_LE_RELEASE_IRAM_SUPPORTED
@@ -133,11 +148,6 @@ extern int _mtvt_table;
 
 static const char *TAG = "cpu_start";
 
-#if CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY
-extern int _ext_ram_bss_start;
-extern int _ext_ram_bss_end;
-#endif
-
 #ifdef CONFIG_ESP32_IRAM_AS_8BIT_ACCESSIBLE_MEMORY
 extern int _iram_bss_start;
 extern int _iram_bss_end;
@@ -155,24 +165,19 @@ static void core_intr_matrix_clear(void)
     uint32_t core_id = esp_cpu_get_core_id();
 
     for (int i = 0; i < ETS_MAX_INTR_SOURCE; i++) {
-#if CONFIG_IDF_TARGET_ESP32P4
-        if (core_id == 0) {
-            REG_WRITE(INTERRUPT_CORE0_LP_RTC_INT_MAP_REG + 4 * i, ETS_INVALID_INUM);
-        } else {
-            REG_WRITE(INTERRUPT_CORE1_LP_RTC_INT_MAP_REG + 4 * i, ETS_INVALID_INUM);
-        }
+#if SOC_INT_CLIC_SUPPORTED
+        interrupt_clic_ll_route(core_id, i, ETS_INVALID_INUM);
 #else
         esp_rom_route_intr_matrix(core_id, i, ETS_INVALID_INUM);
-#endif  // CONFIG_IDF_TARGET_ESP32P4
+#endif  // SOC_INT_CLIC_SUPPORTED
     }
 
 #if SOC_INT_CLIC_SUPPORTED
     for (int i = 0; i < 32; i++) {
         /* Set all the CPU interrupt lines to vectored by default, as it is on other RISC-V targets */
-        esprv_intc_int_set_vectored(i, true);
+        esprv_int_set_vectored(i, true);
     }
 #endif // SOC_INT_CLIC_SUPPORTED
-
 }
 
 #if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
@@ -187,7 +192,7 @@ void IRAM_ATTR call_start_cpu1(void)
     // Configure the global pointer register
     // (This should be the first thing IDF app does, as any other piece of code could be
     // relaxed by the linker to access something relative to __global_pointer$)
-    __asm__ __volatile__ (
+    __asm__ __volatile__(
         ".option push\n"
         ".option norelax\n"
         "la gp, __global_pointer$\n"
@@ -214,9 +219,9 @@ void IRAM_ATTR call_start_cpu1(void)
 #if CONFIG_ESP_CONSOLE_NONE
     esp_rom_install_channel_putc(1, NULL);
     esp_rom_install_channel_putc(2, NULL);
-#else // CONFIG_ESP_CONSOLE_NONE
+#elif !CONFIG_ESP_CONSOLE_USB_CDC
     esp_rom_install_uart_printf();
-    esp_rom_uart_set_as_console(CONFIG_ESP_CONSOLE_UART_NUM);
+    esp_rom_output_set_as_console(CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM);
 #endif
 
 #if CONFIG_IDF_TARGET_ESP32
@@ -299,14 +304,17 @@ static void start_other_core(void)
     if (!REG_GET_BIT(HP_SYS_CLKRST_SOC_CLK_CTRL0_REG, HP_SYS_CLKRST_REG_CORE1_CPU_CLK_EN)) {
         REG_SET_BIT(HP_SYS_CLKRST_SOC_CLK_CTRL0_REG, HP_SYS_CLKRST_REG_CORE1_CPU_CLK_EN);
     }
-    if(REG_GET_BIT(HP_SYS_CLKRST_HP_RST_EN0_REG, HP_SYS_CLKRST_REG_RST_EN_CORE1_GLOBAL)){
+    if (REG_GET_BIT(HP_SYS_CLKRST_HP_RST_EN0_REG, HP_SYS_CLKRST_REG_RST_EN_CORE1_GLOBAL)) {
         REG_CLR_BIT(HP_SYS_CLKRST_HP_RST_EN0_REG, HP_SYS_CLKRST_REG_RST_EN_CORE1_GLOBAL);
     }
+#endif
+
+#if SOC_KEY_MANAGER_SUPPORTED
     // The following operation makes the Key Manager to use eFuse key for ECDSA and XTS-AES operation by default
     // This is to keep the default behavior same as the other chips
     // If the Key Manager configuration is already locked then following operation does not have any effect
-    // TODO-IDF 7925 (Move this under SOC_KEY_MANAGER_SUPPORTED)
-    REG_SET_FIELD(KEYMNG_STATIC_REG, KEYMNG_USE_EFUSE_KEY, 3);
+    key_mgr_hal_set_key_usage(ESP_KEY_MGR_ECDSA_KEY, ESP_KEY_MGR_USE_EFUSE_KEY);
+    key_mgr_hal_set_key_usage(ESP_KEY_MGR_XTS_AES_128_KEY, ESP_KEY_MGR_USE_EFUSE_KEY);
 #endif
     ets_set_appcpu_boot_addr((uint32_t)call_start_cpu1);
 
@@ -378,7 +386,7 @@ void IRAM_ATTR call_start_cpu0(void)
     // Configure the global pointer register
     // (This should be the first thing IDF app does, as any other piece of code could be
     // relaxed by the linker to access something relative to __global_pointer$)
-    __asm__ __volatile__ (
+    __asm__ __volatile__(
         ".option push\n"
         ".option norelax\n"
         "la gp, __global_pointer$\n"
@@ -404,7 +412,12 @@ void IRAM_ATTR call_start_cpu0(void)
 #endif
 
     //Clear BSS. Please do not attempt to do any complex stuff (like early logging) before this.
+#if SOC_MEM_NON_CONTIGUOUS_SRAM
+    memset(&_bss_start_low, 0, (&_bss_end_low - &_bss_start_low) * sizeof(_bss_start_low));
+    memset(&_bss_start_high, 0, (&_bss_end_high - &_bss_start_high) * sizeof(_bss_start_high));
+#else
     memset(&_bss_start, 0, (&_bss_end - &_bss_start) * sizeof(_bss_start));
+#endif // SOC_MEM_NON_CONTIGUOUS_SRAM
 
 #if CONFIG_BT_LE_RELEASE_IRAM_SUPPORTED
     // Clear Bluetooth bss
@@ -423,17 +436,10 @@ void IRAM_ATTR call_start_cpu0(void)
     }
 #endif
 
-#if !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
-#if CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
-    ESP_EARLY_LOGI(TAG, "Unicore app");
-#else
-    ESP_EARLY_LOGI(TAG, "Multicore app");
-#if !SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
+#if !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP && !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE && !SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
     // It helps to fix missed cache settings for other cores. It happens when bootloader is unicore.
     do_multicore_settings();
-#endif // !SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
 #endif
-#endif // !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
 
     // When the APP is loaded into ram for execution, some hardware initialization behaviors
     // in the bootloader are still necessary
@@ -444,11 +450,19 @@ void IRAM_ATTR call_start_cpu0(void)
 #endif  //#if !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
 #endif  //#if CONFIG_APP_BUILD_TYPE_RAM
 
+#if CONFIG_IDF_TARGET_ESP32P4
+#define RWDT_RESET           RESET_REASON_CORE_RWDT
+#define MWDT_RESET           RESET_REASON_CORE_MWDT
+#else
+#define RWDT_RESET           RESET_REASON_CORE_RTC_WDT
+#define MWDT_RESET           RESET_REASON_CORE_MWDT0
+#endif
+
 #ifndef CONFIG_BOOTLOADER_WDT_ENABLE
     // from panic handler we can be reset by RWDT or TG0WDT
-    if (rst_reas[0] == RESET_REASON_CORE_RTC_WDT || rst_reas[0] == RESET_REASON_CORE_MWDT0
+    if (rst_reas[0] == RWDT_RESET || rst_reas[0] == MWDT_RESET
 #if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
-            || rst_reas[1] == RESET_REASON_CORE_RTC_WDT || rst_reas[1] == RESET_REASON_CORE_MWDT0
+            || rst_reas[1] == RWDT_RESET || rst_reas[1] == MWDT_RESET
 #endif
        ) {
         wdt_hal_context_t rtc_wdt_ctx = RWDT_HAL_CONTEXT_DEFAULT();
@@ -490,9 +504,6 @@ void IRAM_ATTR call_start_cpu0(void)
     extern void esp_config_l2_cache_mode(void);
     esp_config_l2_cache_mode();
 #endif
-    if (esp_efuse_check_errors() != ESP_OK) {
-        esp_restart();
-    }
 
 #if ESP_ROM_NEEDS_SET_CACHE_MMU_SIZE
 #if CONFIG_APP_BUILD_TYPE_ELF_RAM
@@ -516,22 +527,19 @@ void IRAM_ATTR call_start_cpu0(void)
 #if CONFIG_ESPTOOLPY_OCT_FLASH && !CONFIG_ESPTOOLPY_FLASH_MODE_AUTO_DETECT
     bool efuse_opflash_en = efuse_ll_get_flash_type();
     if (!efuse_opflash_en) {
-        ESP_EARLY_LOGE(TAG, "Octal Flash option selected, but EFUSE not configured!");
+        ESP_DRAM_LOGE(TAG, "Octal Flash option selected, but EFUSE not configured!");
         abort();
     }
-#endif
-
-#if SOC_CLK_MPLL_SUPPORTED
-#if SOC_PSRAM_VDD_POWER_MPLL
-    esp_ldo_vdd_psram_early_init();
-#endif
-    rtc_clk_mpll_enable();
 #endif
 
     esp_mspi_pin_init();
     // For Octal flash, it's hard to implement a read_id function in OPI mode for all vendors.
     // So we have to read it here in SPI mode, before entering the OPI mode.
     bootloader_flash_update_id();
+
+    // Configure the power related stuff. After this the MSPI timing tuning can be done.
+    esp_rtc_init();
+
     /**
      * This function initialise the Flash chip to the user-defined settings.
      *
@@ -541,27 +549,50 @@ void IRAM_ATTR call_start_cpu0(void)
      */
     spi_flash_init_chip_state();
 #if SOC_MEMSPI_SRC_FREQ_120M
+    // This function needs to be called when PLL is enabled. Needs to be called after spi_flash_init_chip_state in case
+    // some state of flash is modified.
     mspi_timing_flash_tuning();
 #endif
 
     esp_mmu_map_init();
 
+#if !CONFIG_APP_BUILD_TYPE_ELF_RAM
+#if CONFIG_SPIRAM_FLASH_LOAD_TO_PSRAM
+    ESP_ERROR_CHECK(image_process());
+#endif
+#endif
+
 #if CONFIG_SPIRAM_BOOT_INIT
     if (esp_psram_init() != ESP_OK) {
 #if CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY
-        ESP_EARLY_LOGE(TAG, "Failed to init external RAM, needed for external .bss segment");
+        ESP_DRAM_LOGE(TAG, "Failed to init external RAM, needed for external .bss segment");
         abort();
 #endif
 
 #if CONFIG_SPIRAM_IGNORE_NOTFOUND
         ESP_EARLY_LOGI(TAG, "Failed to init external RAM; continuing without it.");
 #else
-        ESP_EARLY_LOGE(TAG, "Failed to init external RAM!");
+        ESP_DRAM_LOGE(TAG, "Failed to init external RAM!");
         abort();
 #endif
     }
 #endif
+
+    //----------------------------------Separator-----------------------------//
+    /**
+     * @note
+     * After this stage, you can access the flash through the cache, i.e. run code which is not placed in IRAM
+     * or print string which locates on flash
+     */
+    esp_mspi_pin_reserve();
+
 #endif // !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
+
+#if CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+    ESP_EARLY_LOGI(TAG, "Unicore app");
+#else
+    ESP_EARLY_LOGI(TAG, "Multicore app");
+#endif
 
     bootloader_init_mem();
 
@@ -581,7 +612,7 @@ void IRAM_ATTR call_start_cpu0(void)
 #elif CONFIG_IDF_TARGET_ESP32S3
     REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
 #if SOC_APPCPU_HAS_CLOCK_GATING_BUG
-    /* The clock gating signal of the App core is invalid. We use RUNSTALL and RESETING
+    /* The clock gating signal of the App core is invalid. We use RUNSTALL and RESETTING
        signals to ensure that the App core stops running in single-core mode. */
     REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
@@ -647,7 +678,7 @@ void IRAM_ATTR call_start_cpu0(void)
 #endif // !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
 
 #if CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY
-    memset(&_ext_ram_bss_start, 0, (&_ext_ram_bss_end - &_ext_ram_bss_start) * sizeof(_ext_ram_bss_start));
+    esp_psram_bss_init();
 #endif
 
 //Enable trace memory and immediately start trace.
@@ -680,20 +711,20 @@ void IRAM_ATTR call_start_cpu0(void)
 #if ESP_ROM_UART_CLK_IS_XTAL
     clock_hz = esp_clk_xtal_freq(); // From esp32-s3 on, UART clock source is selected to XTAL in ROM
 #endif
-    esp_rom_uart_tx_wait_idle(CONFIG_ESP_CONSOLE_UART_NUM);
+    esp_rom_output_tx_wait_idle(CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM);
 
     // In a single thread mode, the freertos is not started yet. So don't have to use a critical section.
-    int __DECLARE_RCC_ATOMIC_ENV __attribute__ ((unused)); // To avoid build errors about spinlock's __DECLARE_RCC_ATOMIC_ENV
-    esp_rom_uart_set_clock_baudrate(CONFIG_ESP_CONSOLE_UART_NUM, clock_hz, CONFIG_ESP_CONSOLE_UART_BAUDRATE);
+    int __DECLARE_RCC_ATOMIC_ENV __attribute__((unused));  // To avoid build errors about spinlock's __DECLARE_RCC_ATOMIC_ENV
+    esp_rom_uart_set_clock_baudrate(CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM, clock_hz, CONFIG_ESP_CONSOLE_UART_BAUDRATE);
 #endif
 #endif
 
-#if !CONFIG_IDF_TARGET_ESP32P4 //TODO: IDF-7529
+#if SOC_DEEP_SLEEP_SUPPORTED //TODO: IDF-8638, IDF-9245
     // Need to unhold the IOs that were hold right before entering deep sleep, which are used as wakeup pins
     if (rst_reas[0] == RESET_REASON_CORE_DEEP_SLEEP) {
         esp_deep_sleep_wakeup_io_reset();
     }
-#endif  //#if !CONFIG_IDF_TARGET_ESP32P4
+#endif  //#if SOC_DEEP_SLEEP_SUPPORTED
 
 #if !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
     esp_cache_err_int_init();
