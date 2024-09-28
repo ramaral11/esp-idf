@@ -19,6 +19,8 @@
 #include "hal/hal_utils.h"
 #include "soc/mipi_csi_bridge_struct.h"
 #include "soc/isp_periph.h"
+#include "soc/soc_caps.h"
+#include "esp_private/esp_clk_tree_common.h"
 #include "esp_private/isp_private.h"
 
 typedef struct isp_platform_t {
@@ -106,6 +108,7 @@ esp_err_t esp_isp_new_processor(const esp_isp_processor_cfg_t *proc_config, isp_
     }
     ;
     isp_hal_init(&proc->hal, proc->proc_id);
+    esp_clk_tree_enable_src((soc_module_clk_t)clk_src, true);
     PERIPH_RCC_ATOMIC() {
         isp_ll_select_clk_source(proc->hal.hw, clk_src);
         isp_ll_set_clock_div(proc->hal.hw, &clk_div);
@@ -136,6 +139,10 @@ esp_err_t esp_isp_new_processor(const esp_isp_processor_cfg_t *proc_config, isp_
     isp_ll_enable_line_end_packet_exist(proc->hal.hw, proc_config->has_line_end_packet);
     isp_ll_set_intput_data_h_pixel_num(proc->hal.hw, proc_config->h_res);
     isp_ll_set_intput_data_v_row_num(proc->hal.hw, proc_config->v_res);
+    isp_ll_yuv_set_std(proc->hal.hw, proc_config->yuv_std);
+    if (out_color_format.color_space == COLOR_SPACE_YUV) {
+        isp_ll_yuv_set_range(proc->hal.hw, proc_config->yuv_range);
+    }
 
     proc->in_color_format = in_color_format;
     proc->out_color_format = out_color_format;
@@ -163,6 +170,31 @@ esp_err_t esp_isp_del_processor(isp_proc_handle_t proc)
     ESP_RETURN_ON_ERROR(mipi_csi_brg_declaim(proc->csi_brg_id), TAG, "declaim csi bridge fail");
 #endif
     free(proc);
+
+    return ESP_OK;
+}
+
+esp_err_t esp_isp_register_event_callbacks(isp_proc_handle_t proc, const esp_isp_evt_cbs_t *cbs, void *user_data)
+{
+    ESP_RETURN_ON_FALSE(proc && cbs, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
+    ESP_RETURN_ON_FALSE(proc->isp_fsm == ISP_FSM_INIT, ESP_ERR_INVALID_STATE, TAG, "processor isn't in the init state");
+
+#if CONFIG_ISP_ISR_IRAM_SAFE
+    if (cbs->on_sharpen_frame_done) {
+        ESP_RETURN_ON_FALSE(esp_ptr_in_iram(cbs->on_sharpen_frame_done), ESP_ERR_INVALID_ARG, TAG, "on_sharpen_frame_done callback not in IRAM");
+    }
+    if (user_data) {
+        ESP_RETURN_ON_FALSE(esp_ptr_internal(user_data), ESP_ERR_INVALID_ARG, TAG, "user context not in internal RAM");
+    }
+#endif
+    proc->cbs.on_sharpen_frame_done = cbs->on_sharpen_frame_done;
+    proc->user_data = user_data;
+
+    if (cbs->on_sharpen_frame_done) {
+        ESP_RETURN_ON_ERROR(esp_isp_register_isr(proc, ISP_SUBMODULE_SHARPEN), TAG, "fail to register ISR");
+    } else {
+        ESP_RETURN_ON_ERROR(esp_isp_deregister_isr(proc, ISP_SUBMODULE_SHARPEN), TAG, "fail to deregister ISR");
+    }
 
     return ESP_OK;
 }
@@ -201,6 +233,8 @@ static void IRAM_ATTR s_isp_isr_dispatcher(void *arg)
     uint32_t af_events = isp_hal_check_clear_intr_event(&proc->hal, ISP_LL_EVENT_AF_MASK);
     uint32_t awb_events = isp_hal_check_clear_intr_event(&proc->hal, ISP_LL_EVENT_AWB_MASK);
     uint32_t ae_events = isp_hal_check_clear_intr_event(&proc->hal, ISP_LL_EVENT_AE_MASK);
+    uint32_t sharp_events = isp_hal_check_clear_intr_event(&proc->hal, ISP_LL_EVENT_SHARP_MASK);
+    uint32_t hist_events = isp_hal_check_clear_intr_event(&proc->hal, ISP_LL_EVENT_HIST_MASK);
 
     bool do_dispatch = false;
     //Deal with hw events
@@ -234,6 +268,26 @@ static void IRAM_ATTR s_isp_isr_dispatcher(void *arg)
         }
         do_dispatch = false;
     }
+    if (sharp_events) {
+        portENTER_CRITICAL_ISR(&proc->spinlock);
+        do_dispatch = proc->isr_users.sharp_isr_added;
+        portEXIT_CRITICAL_ISR(&proc->spinlock);
+
+        if (do_dispatch) {
+            need_yield |= esp_isp_sharpen_isr(proc, sharp_events);
+        }
+        do_dispatch = false;
+    }
+    if (hist_events) {
+        portENTER_CRITICAL_ISR(&proc->spinlock);
+        do_dispatch = proc->isr_users.hist_isr_added;
+        portEXIT_CRITICAL_ISR(&proc->spinlock);
+
+        if (do_dispatch) {
+            need_yield |= esp_isp_hist_isr(proc, hist_events);
+        }
+        do_dispatch = false;
+    }
     if (need_yield) {
         portYIELD_FROM_ISR();
     }
@@ -262,6 +316,12 @@ esp_err_t esp_isp_register_isr(isp_proc_handle_t proc, isp_submodule_t submodule
     case ISP_SUBMODULE_AE:
         proc->isr_users.ae_isr_added = true;
         break;
+    case ISP_SUBMODULE_SHARPEN:
+        proc->isr_users.sharp_isr_added = true;
+        break;
+    case ISP_SUBMODULE_HIST:
+        proc->isr_users.hist_isr_added = true;
+        break;
     default:
         assert(false);
     }
@@ -270,7 +330,7 @@ esp_err_t esp_isp_register_isr(isp_proc_handle_t proc, isp_submodule_t submodule
     if (do_alloc) {
 
         uint32_t intr_st_reg_addr = isp_ll_get_intr_status_reg_addr(proc->hal.hw);
-        uint32_t intr_st_mask = ISP_LL_EVENT_AF_MASK | ISP_LL_EVENT_AE_MASK | ISP_LL_EVENT_AWB_MASK;
+        uint32_t intr_st_mask = ISP_LL_EVENT_AF_MASK | ISP_LL_EVENT_AE_MASK | ISP_LL_EVENT_AWB_MASK | ISP_LL_EVENT_HIST_MASK;
         ret = esp_intr_alloc_intrstatus(isp_hw_info.instances[proc->proc_id].irq, ISP_INTR_ALLOC_FLAGS | proc->intr_priority, intr_st_reg_addr, intr_st_mask,
                                         s_isp_isr_dispatcher, (void *)proc, &proc->intr_hdl);
         if (ret != ESP_OK) {
@@ -306,6 +366,12 @@ esp_err_t esp_isp_deregister_isr(isp_proc_handle_t proc, isp_submodule_t submodu
         break;
     case ISP_SUBMODULE_AE:
         proc->isr_users.ae_isr_added = false;
+        break;
+    case ISP_SUBMODULE_SHARPEN:
+        proc->isr_users.sharp_isr_added = false;
+        break;
+    case ISP_SUBMODULE_HIST:
+        proc->isr_users.hist_isr_added = false;
         break;
     default:
         assert(false);

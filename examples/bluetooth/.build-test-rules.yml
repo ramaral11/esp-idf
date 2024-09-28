@@ -109,6 +109,14 @@ examples/bluetooth/esp_ble_mesh/wifi_coexist:
   depends_filepatterns:
     - examples/bluetooth/esp_ble_mesh/common_components/**/*
 
+examples/bluetooth/esp_hid_host:
+  disable_test:
+    - if: IDF_TARGET != "esp32"
+      temporary: true
+      reason: temporarily test esp32
+  disable:
+    - if: SOC_BT_SUPPORTED != 1
+
 examples/bluetooth/hci:
   <<: *bt_default_depends
   enable:
@@ -193,7 +201,7 @@ examples/bluetooth/nimble/blecent:
   disable:
     - if: SOC_BLE_SUPPORTED != 1
   disable_test:
-    - if: IDF_TARGET in ["esp32c5"]
+    - if: IDF_TARGET in ["esp32c61"]
       temporary: true
       reason: Not supported yet
   depends_components:
@@ -244,10 +252,7 @@ examples/bluetooth/nimble/power_save:
   <<: *bt_default_depends
   disable:
     - if: SOC_BLE_SUPPORTED != 1
-  disable_test:
-    - if: IDF_TARGET in ["esp32c5"]
-      temporary: true
-      reason: Not supported yet
+    - if: IDF_TARGET in ["esp32c61"]
   depends_components:
     - bt
     - esp_phy

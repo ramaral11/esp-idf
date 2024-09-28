@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <string.h>
 #include "sdkconfig.h"
+#include "soc/soc_caps.h"
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
 #include "esp_pm.h"
@@ -18,6 +19,7 @@
 #include "freertos/semphr.h"
 #include "freertos/timers.h"
 #include "freertos/ringbuf.h"
+#include "esp_private/esp_clk_tree_common.h"
 #include "esp_private/periph_ctrl.h"
 #include "esp_private/adc_share_hw_ctrl.h"
 #include "esp_private/sar_periph_ctrl.h"
@@ -290,7 +292,7 @@ esp_err_t adc_digi_initialize(const adc_digi_init_config_t *init_config)
     gdma_channel_alloc_config_t rx_alloc_config = {
         .direction = GDMA_CHANNEL_DIRECTION_RX,
     };
-    ret = gdma_new_channel(&rx_alloc_config, &s_adc_digi_ctx->rx_dma_channel);
+    ret = gdma_new_ahb_channel(&rx_alloc_config, &s_adc_digi_ctx->rx_dma_channel);
     if (ret != ESP_OK) {
         goto cleanup;
     }
@@ -472,6 +474,9 @@ esp_err_t adc_digi_start(void)
     adc_hal_set_controller(ADC_UNIT_2, ADC_HAL_CONTINUOUS_READ_MODE);
 
     adc_hal_digi_init(&s_adc_digi_ctx->hal);
+#if !CONFIG_IDF_TARGET_ESP32
+    esp_clk_tree_enable_src((soc_module_clk_t)(s_adc_digi_ctx->hal_digi_ctrlr_cfg.clk_src), true);
+#endif
     adc_hal_digi_controller_config(&s_adc_digi_ctx->hal, &s_adc_digi_ctx->hal_digi_ctrlr_cfg);
 
     adc_dma_stop(s_adc_digi_ctx);

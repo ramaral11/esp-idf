@@ -519,6 +519,10 @@ config SOC_GPIO_SUPPORT_FORCE_HOLD
     bool
     default y
 
+config SOC_GPIO_SUPPORT_HOLD_IO_IN_DSLP
+    bool
+    default y
+
 config SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
     bool
     default y
@@ -542,10 +546,6 @@ config SOC_RTCIO_PIN_COUNT
 config SOC_RTCIO_HOLD_SUPPORTED
     bool
     default y
-
-config SOC_RTCIO_VALID_RTCIO_MASK
-    hex
-    default 0x7F80
 
 config SOC_DEDIC_GPIO_OUT_CHANNELS_NUM
     int
@@ -1338,6 +1338,22 @@ config SOC_PM_SUPPORT_TOP_PD
 config SOC_PM_PAU_LINK_NUM
     int
     default 4
+
+config SOC_PM_PAU_REGDMA_LINK_MULTI_ADDR
+    bool
+    default y
+
+config SOC_PM_PAU_REGDMA_LINK_WIFIMAC
+    bool
+    default y
+
+config SOC_PM_PAU_REGDMA_UPDATE_CACHE_BEFORE_WAIT_COMPARE
+    bool
+    default y
+
+config SOC_EXT_MEM_CACHE_TAG_IN_CPU_DOMAIN
+    bool
+    default y
 
 config SOC_PM_CPU_RETENTION_BY_SW
     bool

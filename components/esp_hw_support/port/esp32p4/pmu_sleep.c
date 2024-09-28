@@ -136,8 +136,6 @@ static inline pmu_sleep_param_config_t * pmu_sleep_param_config_default(
     return param;
 }
 
-TCM_DRAM_ATTR static uint32_t s_saved_pd_flags = 0;
-
 const pmu_sleep_config_t* pmu_sleep_config_default(
         pmu_sleep_config_t *config,
         uint32_t pd_flags,
@@ -147,7 +145,6 @@ const pmu_sleep_config_t* pmu_sleep_config_default(
         bool dslp
     )
 {
-    s_saved_pd_flags = pd_flags;
     pmu_sleep_power_config_t power_default = PMU_SLEEP_POWER_CONFIG_DEFAULT(pd_flags);
 
     uint32_t iram_pd_flags = 0;
@@ -163,6 +160,11 @@ const pmu_sleep_config_t* pmu_sleep_config_default(
         config->digital = digital_default;
 
         pmu_sleep_analog_config_t analog_default = PMU_SLEEP_ANALOG_DSLP_CONFIG_DEFAULT(pd_flags);
+#if CONFIG_RTC_FAST_CLK_SRC_XTAL
+        analog_default.hp_sys.analog.pd_cur = PMU_PD_CUR_SLEEP_ON;
+        analog_default.hp_sys.analog.bias_sleep = PMU_BIASSLP_SLEEP_ON;
+        analog_default.hp_sys.analog.dbg_atten = PMU_DBG_ATTEN_ACTIVE_DEFAULT;
+#endif
         config->analog = analog_default;
     } else {
         // Get light sleep digital_default
@@ -171,10 +173,31 @@ const pmu_sleep_config_t* pmu_sleep_config_default(
 
         // Get light sleep analog default
         pmu_sleep_analog_config_t analog_default = PMU_SLEEP_ANALOG_LSLP_CONFIG_DEFAULT(pd_flags);
-#if CONFIG_SPIRAM
-        analog_default.hp_sys.analog.pd_cur = 0;
-        analog_default.lp_sys[PMU_MODE_LP_SLEEP].analog.pd_cur = 0;
+
+#if !CONFIG_ESP_SLEEP_POWER_DOWN_FLASH
+        analog_default.hp_sys.analog.pd_cur = PMU_PD_CUR_SLEEP_ON;
+        analog_default.lp_sys[PMU_MODE_LP_SLEEP].analog.pd_cur = PMU_PD_CUR_SLEEP_ON;
 #endif
+
+#if !CONFIG_RTC_FAST_CLK_SRC_XTAL
+        if (!(pd_flags & PMU_SLEEP_PD_XTAL))
+#endif
+        {
+            // Analog parameters in HP_SLEEP
+            analog_default.hp_sys.analog.pd_cur = PMU_PD_CUR_SLEEP_ON;
+            analog_default.hp_sys.analog.bias_sleep = PMU_BIASSLP_SLEEP_ON;
+            analog_default.hp_sys.analog.dbg_atten = PMU_DBG_ATTEN_ACTIVE_DEFAULT;
+        }
+
+        if (!(pd_flags & PMU_SLEEP_PD_XTAL)) {
+            // Analog parameters in LP_SLEEP
+            analog_default.lp_sys[LP(SLEEP)].analog.pd_cur = PMU_PD_CUR_SLEEP_ON;
+            analog_default.lp_sys[LP(SLEEP)].analog.bias_sleep = PMU_BIASSLP_SLEEP_ON;
+            analog_default.lp_sys[LP(SLEEP)].analog.dbg_atten = PMU_DBG_ATTEN_ACTIVE_DEFAULT;
+#if !CONFIG_ESP_SLEEP_KEEP_DCDC_ALWAYS_ON
+            analog_default.lp_sys[LP(SLEEP)].analog.dbias = LP_CALI_DBIAS;
+#endif
+        }
 
 #if CONFIG_ESP_SLEEP_KEEP_DCDC_ALWAYS_ON
         power_default.hp_sys.dig_power.dcdc_switch_pd_en = 0;
@@ -183,6 +206,10 @@ const pmu_sleep_config_t* pmu_sleep_config_default(
 #endif
         config->analog = analog_default;
     }
+
+#if CONFIG_RTC_FAST_CLK_SRC_XTAL
+    power_default.hp_sys.xtal.xpd_xtal = 1;
+#endif
 
     config->power = power_default;
     pmu_sleep_param_config_t param_default = PMU_SLEEP_PARAM_CONFIG_DEFAULT(pd_flags);
@@ -280,13 +307,13 @@ void pmu_sleep_shutdown_dcdc(void) {
     SET_PERI_REG_MASK(LP_SYSTEM_REG_SYS_CTRL_REG, LP_SYSTEM_REG_LP_FIB_DCDC_SWITCH); //0: enable, 1: disable
     REG_SET_BIT(PMU_DCM_CTRL_REG, PMU_DCDC_OFF_REQ);
     // Decrease hp_ldo voltage.
-    REG_SET_FIELD(PMU_HP_ACTIVE_HP_REGULATOR0_REG, PMU_HP_ACTIVE_HP_REGULATOR_DBIAS, 24);
+    pmu_ll_hp_set_regulator_dbias(&PMU, PMU_MODE_HP_ACTIVE, HP_CALI_ACTIVE_DBIAS_DEFAULT);
 }
 
 void pmu_sleep_enable_dcdc(void) {
     CLEAR_PERI_REG_MASK(LP_SYSTEM_REG_SYS_CTRL_REG, LP_SYSTEM_REG_LP_FIB_DCDC_SWITCH); //0: enable, 1: disable
     SET_PERI_REG_MASK(PMU_DCM_CTRL_REG, PMU_DCDC_ON_REQ);
-    REG_SET_FIELD(PMU_HP_ACTIVE_BIAS_REG, PMU_HP_ACTIVE_DCM_VSET, 27);
+    REG_SET_FIELD(PMU_HP_ACTIVE_BIAS_REG, PMU_HP_ACTIVE_DCM_VSET, HP_CALI_ACTIVE_DCM_VSET_DEFAULT);
 }
 
 void pmu_sleep_shutdown_ldo(void) {
@@ -308,11 +335,11 @@ TCM_IRAM_ATTR uint32_t pmu_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt,
     pmu_ll_hp_clear_reject_intr_status(PMU_instance()->hal->dev);
     pmu_ll_hp_clear_reject_cause(PMU_instance()->hal->dev);
 
-    if (s_saved_pd_flags & PMU_SLEEP_PD_TOP) {
-        // L1 Cache will be powered down during PD_TOP sleep, write it back to L2 Cache here.
-        // !!! Need to manually check that data in L2 memory will not be modified from now on. !!!
-        Cache_WriteBack_All(CACHE_MAP_L1_DCACHE);
-    }
+    // For the sleep where powered down the TOP domain, the L1 cache data memory will be lost and needs to be written back here.
+    // For the sleep without power down the TOP domain, regdma retention may still be enabled, and dirty data in the L1 cache needs
+    // to be written back so that regdma can get the correct link. So we always need to write back to L1 DCache here.
+    // !!! Need to manually check that data in L2 memory will not be modified from now on. !!!
+    Cache_WriteBack_All(CACHE_MAP_L1_DCACHE);
 
 #if CONFIG_SPIRAM
     psram_ctrlr_ll_wait_all_transaction_done();
@@ -352,7 +379,7 @@ TCM_IRAM_ATTR bool pmu_sleep_finish(bool dslp)
     } else
 #endif
     {
-        pmu_ll_hp_set_dcm_vset(&PMU, PMU_MODE_HP_ACTIVE, 27);
+        pmu_ll_hp_set_dcm_vset(&PMU, PMU_MODE_HP_ACTIVE, HP_CALI_ACTIVE_DCM_VSET_DEFAULT);
         if (pmu_ll_hp_is_sleep_reject(PMU_instance()->hal->dev)) {
             // If sleep is rejected, the hardware wake-up process that turns on DCDC
             // is skipped, and software is used to enable DCDC here.

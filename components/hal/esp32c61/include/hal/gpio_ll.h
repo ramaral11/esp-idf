@@ -260,6 +260,31 @@ static inline void gpio_ll_pin_filter_disable(gpio_dev_t *hw, uint32_t gpio_num)
 }
 
 /**
+  * @brief Enable GPIO hysteresis
+  *
+  * @param hw Peripheral GPIO hardware instance address.
+  * @param gpio_num GPIO number
+  */
+static inline void gpio_ll_pin_input_hysteresis_enable(gpio_dev_t *hw, uint32_t gpio_num)
+{
+    // Always set hys_sel to 1 to use software control hysteresis, since no efuse bit reserved for hysteresis on ESP32C61
+    IO_MUX.gpion[gpio_num].gpion_hys_sel = 1;
+    IO_MUX.gpion[gpio_num].gpion_hys_en = 1;
+}
+
+/**
+  * @brief Disable GPIO hysteresis
+  *
+  * @param hw Peripheral GPIO hardware instance address.
+  * @param gpio_num GPIO number
+  */
+static inline void gpio_ll_pin_input_hysteresis_disable(gpio_dev_t *hw, uint32_t gpio_num)
+{
+    IO_MUX.gpion[gpio_num].gpion_hys_sel = 1;
+    IO_MUX.gpion[gpio_num].gpion_hys_en = 0;
+}
+
+/**
   * @brief Disable output mode on GPIO.
   *
   * @param hw Peripheral GPIO hardware instance address.
@@ -269,8 +294,6 @@ __attribute__((always_inline))
 static inline void gpio_ll_output_disable(gpio_dev_t *hw, uint32_t gpio_num)
 {
     hw->enable_w1tc.enable_w1tc = (0x1 << gpio_num);
-    // Ensure no other output signal is routed via GPIO matrix to this pin
-    hw->funcn_out_sel_cfg[gpio_num].funcn_out_sel = SIG_GPIO_OUT_IDX;
 }
 
 /**
@@ -305,6 +328,21 @@ static inline void gpio_ll_od_disable(gpio_dev_t *hw, uint32_t gpio_num)
 static inline void gpio_ll_od_enable(gpio_dev_t *hw, uint32_t gpio_num)
 {
     hw->pinn[gpio_num].pinn_pad_driver = 1;
+}
+
+/**
+ * @brief Disconnect any peripheral output signal routed via GPIO matrix to the pin
+ *
+ * @param  hw Peripheral GPIO hardware instance address.
+ * @param  gpio_num GPIO number
+ */
+__attribute__((always_inline))
+static inline void gpio_ll_matrix_out_default(gpio_dev_t *hw, uint32_t gpio_num)
+{
+    gpio_funcn_out_sel_cfg_reg_t reg = {
+      .funcn_out_sel = SIG_GPIO_OUT_IDX,
+    };
+    hw->funcn_out_sel_cfg[gpio_num].val = reg.val;
 }
 
 /**
@@ -459,19 +497,6 @@ static inline void gpio_ll_iomux_func_sel(uint32_t pin_name, uint32_t func)
         USB_SERIAL_JTAG.conf0.usb_pad_enable = 0;
     }
     PIN_FUNC_SELECT(pin_name, func);
-}
-
-/**
- * @brief  Control the pin in the IOMUX
- *
- * @param  bmap   write mask of control value
- * @param  val    Control value
- * @param  shift  write mask shift of control value
- */
-__attribute__((always_inline))
-static inline void gpio_ll_set_pin_ctrl(uint32_t val, uint32_t bmap, uint32_t shift)
-{
-    SET_PERI_REG_BITS(PIN_CTRL, bmap, val, shift);
 }
 
 /**

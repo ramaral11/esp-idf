@@ -1154,25 +1154,13 @@ static esp_err_t esp_netif_start_api(esp_netif_api_msg_t *msg)
 #else
         LOG_NETIF_DISABLED_AND_DO("DHCP Server", return ESP_ERR_NOT_SUPPORTED);
 #endif
-    } else if (esp_netif->flags & ESP_NETIF_DHCP_CLIENT) {
-#if CONFIG_LWIP_IPV4
-        if (esp_netif->dhcpc_status != ESP_NETIF_DHCP_STARTED) {
-            if (p_netif != NULL) {
-                struct dhcp *dhcp_data = NULL;
-                dhcp_data = netif_dhcp_data(p_netif);
-                if (dhcp_data == NULL) {
-                    dhcp_data = (struct dhcp *)malloc(sizeof(struct dhcp));
-                    if (dhcp_data == NULL) {
-                        return ESP_ERR_NO_MEM;
-                    }
-                    dhcp_set_struct(p_netif, dhcp_data);
-                }
-            }
-        }
-#else
-        LOG_NETIF_DISABLED_AND_DO("IPv4's DHCP Client", return ESP_ERR_NOT_SUPPORTED);
-#endif
     }
+#ifndef CONFIG_LWIP_IPV4
+    else if (esp_netif->flags & ESP_NETIF_DHCP_CLIENT) {
+        LOG_NETIF_DISABLED_AND_DO("IPv4's DHCP Client", return ESP_ERR_NOT_SUPPORTED);
+    }
+#endif
+
     // For netifs with (active) DHCP client: we update the default netif after getting a valid IP
     if (!((esp_netif->flags & ESP_NETIF_DHCP_CLIENT) && esp_netif->dhcpc_status != ESP_NETIF_DHCP_STOPPED)) {
         esp_netif_update_default_netif(esp_netif, ESP_NETIF_STARTED);
@@ -2266,6 +2254,30 @@ int esp_netif_get_all_ip6(esp_netif_t *esp_netif, esp_ip6_addr_t if_ip6[])
     if (p_netif != NULL && netif_is_up(p_netif)) {
         for (int i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
             if (ip6_addr_isvalid(netif_ip6_addr_state(p_netif, i)) && !ip_addr_cmp(&p_netif->ip6_addr[i], IP6_ADDR_ANY)) {
+                memcpy(&if_ip6[addr_count++], &p_netif->ip6_addr[i], sizeof(ip6_addr_t));
+            }
+        }
+    }
+    return addr_count;
+}
+
+int esp_netif_get_all_preferred_ip6(esp_netif_t *esp_netif, esp_ip6_addr_t if_ip6[])
+{
+    ESP_LOGV(TAG, "%s esp-netif:%p", __func__, esp_netif);
+
+    if (esp_netif == NULL || if_ip6 == NULL) {
+        return 0;
+    }
+
+    int addr_count = 0;
+    struct netif *p_netif = esp_netif->lwip_netif;
+
+    if (p_netif != NULL && netif_is_up(p_netif)) {
+        for (int i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
+            // Only return the IPs which are:
+            // 1. the state is preferred
+            // 2. not the IP6_ADDR_ANY(all bits are `0`)
+            if (ip6_addr_ispreferred(netif_ip6_addr_state(p_netif, i)) && !ip_addr_cmp(&p_netif->ip6_addr[i], IP6_ADDR_ANY)) {
                 memcpy(&if_ip6[addr_count++], &p_netif->ip6_addr[i], sizeof(ip6_addr_t));
             }
         }

@@ -515,6 +515,10 @@ config SOC_GPIO_SUPPORT_FORCE_HOLD
     bool
     default y
 
+config SOC_GPIO_SUPPORT_HOLD_IO_IN_DSLP
+    bool
+    default y
+
 config SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
     bool
     default y
@@ -546,10 +550,6 @@ config SOC_RTCIO_HOLD_SUPPORTED
 config SOC_RTCIO_WAKE_SUPPORTED
     bool
     default y
-
-config SOC_RTCIO_VALID_RTCIO_MASK
-    hex
-    default 0xFF
 
 config SOC_DEDIC_GPIO_OUT_CHANNELS_NUM
     int
@@ -1391,9 +1391,25 @@ config SOC_PM_RETENTION_HAS_CLOCK_BUG
     bool
     default y
 
+config SOC_EXT_MEM_CACHE_TAG_IN_CPU_DOMAIN
+    bool
+    default y
+
 config SOC_PM_PAU_LINK_NUM
     int
     default 4
+
+config SOC_PM_PAU_REGDMA_LINK_MULTI_ADDR
+    bool
+    default y
+
+config SOC_PM_PAU_REGDMA_LINK_WIFIMAC
+    bool
+    default y
+
+config SOC_PM_PAU_REGDMA_UPDATE_CACHE_BEFORE_WAIT_COMPARE
+    bool
+    default y
 
 config SOC_CLK_RC_FAST_SUPPORT_CALIBRATION
     bool
@@ -1466,6 +1482,10 @@ config SOC_WIFI_MESH_SUPPORT
 config SOC_WIFI_HE_SUPPORT
     bool
     default y
+
+config SOC_WIFI_MAC_VERSION_NUM
+    int
+    default 2
 
 config SOC_BLE_SUPPORTED
     bool

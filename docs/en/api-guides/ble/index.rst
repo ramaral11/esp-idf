@@ -11,6 +11,19 @@ Overview
    :maxdepth: 1
 
    overview
+   ble-feature-support-status
+
+***************
+Get Started
+***************
+
+.. toctree::
+   :maxdepth: 1
+
+   get-started/ble-introduction
+   get-started/ble-device-discovery
+   get-started/ble-connection
+   get-started/ble-data-exchange
 
 **********
 Profile

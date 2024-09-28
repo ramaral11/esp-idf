@@ -1609,7 +1609,7 @@ rcSetTxAmpduLimit = 0x4000176c;
 rcUpdateAckSnr = 0x40001774;
 /*rcUpdateRate = 0x40001778;*/
 /* rcUpdateTxDone = 0x4000177c; */
-rcUpdateTxDoneAmpdu2 = 0x40001780;
+/* rcUpdateTxDoneAmpdu2 = 0x40001780;*/
 rcUpSched = 0x40001784;
 rssi_margin = 0x40001788;
 rx11NRate2AMPDULimit = 0x4000178c;
@@ -1772,7 +1772,7 @@ coex_hw_timer_set = 0x400018e0;
 coex_schm_interval_set = 0x400018e4;
 coex_schm_lock = 0x400018e8;
 coex_schm_unlock = 0x400018ec;
-coex_status_get = 0x400018f0;
+/*coex_status_get = 0x400018f0;*/
 coex_wifi_release = 0x400018f4;
 esp_coex_ble_conn_dynamic_prio_get = 0x400018f8;
 /* Data (.data, .bss, .rodata) */

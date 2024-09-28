@@ -1,5 +1,5 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- |
+| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-S3 |
+| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- |
 
 # ESP-IDF Blufi Example
 
@@ -20,7 +20,7 @@ To test this demo, you need to prepare a mobile phone with blufi application ins
 Blufi is completely open source, here is the download link:
 
 * [Blufi source code](https://github.com/espressif/esp-idf/tree/master/examples/bluetooth/blufi)
-* [BluFi protocol](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/blufi.html?highlight=blufi#the-frame-formats-defined-in-blufi)
+* [BluFi protocol](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/ble/blufi.html)
 * [iOS source code](https://github.com/EspressifApp/EspBlufiForiOS)
 * [Android source code](https://github.com/EspressifApp/EspBlufi)
 * [Bluetooth Network User Guide CN](https://www.espressif.com/sites/default/files/documentation/esp32_bluetooth_networking_user_guide_cn.pdf)
